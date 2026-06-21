@@ -276,6 +276,27 @@ export type AgentAutoRunResult = {
     | "no_progress";
 };
 
+export type AgentRunReport = {
+  runId: string;
+  status: AgentRunStatus;
+  goal: string;
+  progress: {
+    totalSteps: number;
+    pendingSteps: number;
+    runningSteps: number;
+    completedSteps: number;
+    failedSteps: number;
+    percentComplete: number;
+  };
+  activity: {
+    toolExecutions: number;
+    permissionRequests: number;
+    pendingPermissions: ToolPermissionRequest[];
+  };
+  nextAction: string;
+  generatedAt: string;
+};
+
 export function normalizeAgentRunRequest(input: AgentRunRequest): NormalizedAgentRunRequest {
   return agentRunRequestSchema.parse(input);
 }
