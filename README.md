@@ -27,6 +27,7 @@ crates/
 infra/
   docker-compose.yml
 docs/
+  agent-run-lifecycle.md
   architecture.md
   environment.md
   development-workflow.md
