@@ -34,7 +34,7 @@ export class AgentRuntime {
       return advanced;
     }
 
-    const prompt = this.#promptRegistry.render(
+    const prompt = await this.#promptRegistry.render(
       AGENT_STEP_PROMPT_ID,
       createAgentStepPromptVariables(advanced, startedStep),
     );

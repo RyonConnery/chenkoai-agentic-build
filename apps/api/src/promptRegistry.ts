@@ -8,42 +8,53 @@ import {
 
 export const AGENT_STEP_PROMPT_ID = "agent.step.output";
 
-const promptTemplates = new Map<string, PromptTemplate>([
-  [
-    AGENT_STEP_PROMPT_ID,
-    {
-      id: AGENT_STEP_PROMPT_ID,
-      version: "2026-06-21.1",
-      description: "Generate concrete output for the active agent run step.",
-      system:
-        "You are ChenkoAI, an autonomous software-building agent. Produce concise, actionable output for the active run step.",
-      user: [
-        "Goal: {{goal}}",
-        "",
-        "Context: {{context}}",
-        "",
-        "Completed steps:",
-        "{{completedSteps}}",
-        "",
-        "Current step {{stepNumber}}: {{stepTitle}}",
-        "",
-        "Return the concrete work output for this step. Keep it direct and useful.",
-      ].join("\n"),
-    },
-  ],
-]);
+export const defaultPromptTemplates: PromptTemplate[] = [
+  {
+    id: AGENT_STEP_PROMPT_ID,
+    version: "2026-06-21.1",
+    description: "Generate concrete output for the active agent run step.",
+    system:
+      "You are ChenkoAI, an autonomous software-building agent. Produce concise, actionable output for the active run step.",
+    user: [
+      "Goal: {{goal}}",
+      "",
+      "Context: {{context}}",
+      "",
+      "Completed steps:",
+      "{{completedSteps}}",
+      "",
+      "Current step {{stepNumber}}: {{stepTitle}}",
+      "",
+      "Return the concrete work output for this step. Keep it direct and useful.",
+    ].join("\n"),
+  },
+];
 
-export class PromptRegistry {
-  list(): PromptTemplate[] {
-    return [...promptTemplates.values()];
+export interface PromptRegistry {
+  list(): Promise<PromptTemplate[]>;
+  get(id: string): Promise<PromptTemplate | undefined>;
+  render(id: string, variables: PromptTemplateVariables): Promise<RenderedPrompt>;
+}
+
+export class InMemoryPromptRegistry implements PromptRegistry {
+  readonly #promptTemplates = new Map<string, PromptTemplate>();
+
+  constructor(templates = defaultPromptTemplates) {
+    for (const template of templates) {
+      this.#promptTemplates.set(template.id, template);
+    }
   }
 
-  get(id: string): PromptTemplate | undefined {
-    return promptTemplates.get(id);
+  async list(): Promise<PromptTemplate[]> {
+    return [...this.#promptTemplates.values()];
   }
 
-  render(id: string, variables: PromptTemplateVariables): RenderedPrompt {
-    const template = this.get(id);
+  async get(id: string): Promise<PromptTemplate | undefined> {
+    return this.#promptTemplates.get(id);
+  }
+
+  async render(id: string, variables: PromptTemplateVariables): Promise<RenderedPrompt> {
+    const template = await this.get(id);
     if (!template) {
       throw new Error(`Prompt template not found: ${id}`);
     }
@@ -88,5 +99,3 @@ function formatTemplateValue(value: PromptTemplateVariables[string]): string {
 
   return String(value);
 }
-
-export const promptRegistry = new PromptRegistry();

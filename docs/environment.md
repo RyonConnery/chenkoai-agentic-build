@@ -28,6 +28,12 @@ Use `MODEL_PROVIDER=openai-compatible` with `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
 
 Use `MODEL_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
 
+## Prompt Registry
+
+`PROMPT_REGISTRY_STORE=memory` uses built-in prompt templates.
+
+`PROMPT_REGISTRY_STORE=postgres` stores prompt templates in PostgreSQL and seeds defaults at API startup.
+
 ## Agent Run Storage
 
 `AGENT_RUN_STORE=memory` keeps runs in-process for quick local development.

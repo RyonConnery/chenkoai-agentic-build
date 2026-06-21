@@ -4,12 +4,13 @@ import { ZodError } from "zod";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
-import { promptRegistry } from "./promptRegistry.js";
+import { createPromptRegistry } from "./promptRegistryPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const modelProvider = createModelProviderAdapter();
+const promptRegistry = await createPromptRegistry();
 const agentRuntime = new AgentRuntime(agentRunStore, modelProvider, promptRegistry);
 
 server.get("/health", async () => ({
@@ -26,11 +27,11 @@ server.post<{ Body: ModelGenerateRequest }>("/model/generate", async (request) =
 });
 
 server.get("/prompts", async () => ({
-  prompts: promptRegistry.list(),
+  prompts: await promptRegistry.list(),
 }));
 
 server.get<{ Params: { id: string } }>("/prompts/:id", async (request, reply) => {
-  const prompt = promptRegistry.get(request.params.id);
+  const prompt = await promptRegistry.get(request.params.id);
   if (!prompt) {
     return reply.code(404).send({ error: "prompt_template_not_found" });
   }
