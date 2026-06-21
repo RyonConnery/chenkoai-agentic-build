@@ -1,0 +1,23 @@
+{
+  "name": "chenkoai-agentic-build",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent ChenkoAI agentic AI software platform.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @chenkoai/api",
+    "check": "npm run check --workspaces --if-present",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
+

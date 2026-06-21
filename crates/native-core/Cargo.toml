@@ -1,0 +1,10 @@
+[package]
+name = "chenkoai-native-core"
+version = "0.1.0"
+edition = "2021"
+description = "Native ChenkoAI capabilities for local desktop execution."
+license = "Proprietary"
+
+[lib]
+path = "src/lib.rs"
+

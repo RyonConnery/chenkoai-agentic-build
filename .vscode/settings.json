@@ -1,0 +1,6 @@
+{
+  "editor.formatOnSave": true,
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "python.defaultInterpreterPath": "${workspaceFolder}/services/ai-worker/.venv/Scripts/python.exe"
+}
+
