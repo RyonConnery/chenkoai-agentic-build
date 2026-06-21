@@ -10,6 +10,7 @@ import {
   normalizeEmbeddingRebuildRequest,
 } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
+import { AgentMemoryRetriever } from "./agentMemory.js";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { createDataStore } from "./dataPersistence.js";
@@ -24,7 +25,13 @@ const dataStore = createDataStore();
 const embeddingProvider = createEmbeddingProviderAdapter();
 const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
-const agentRuntime = new AgentRuntime(agentRunStore, modelProvider, promptRegistry);
+const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
+const agentRuntime = new AgentRuntime(
+  agentRunStore,
+  modelProvider,
+  promptRegistry,
+  agentMemoryRetriever,
+);
 
 server.get("/health", async () => ({
   ok: true,

@@ -1,4 +1,5 @@
 import type { AgentRunSnapshot, AgentRunStep } from "@chenkoai/agent-core";
+import type { AgentMemoryRetriever } from "./agentMemory.js";
 import type { AgentRunStore } from "./agentRunStore.js";
 import type { ModelProviderAdapter } from "./modelProvider.js";
 import {
@@ -11,15 +12,18 @@ export class AgentRuntime {
   readonly #store: AgentRunStore;
   readonly #modelProvider: ModelProviderAdapter;
   readonly #promptRegistry: PromptRegistry;
+  readonly #memoryRetriever?: AgentMemoryRetriever;
 
   constructor(
     store: AgentRunStore,
     modelProvider: ModelProviderAdapter,
     promptRegistry: PromptRegistry,
+    memoryRetriever?: AgentMemoryRetriever,
   ) {
     this.#store = store;
     this.#modelProvider = modelProvider;
     this.#promptRegistry = promptRegistry;
+    this.#memoryRetriever = memoryRetriever;
   }
 
   async advance(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -34,9 +38,15 @@ export class AgentRuntime {
       return advanced;
     }
 
+    const memoryContext = this.#memoryRetriever
+      ? await this.#memoryRetriever.retrieve(advanced, startedStep)
+      : "None";
     const prompt = await this.#promptRegistry.render(
       AGENT_STEP_PROMPT_ID,
-      createAgentStepPromptVariables(advanced, startedStep),
+      {
+        ...createAgentStepPromptVariables(advanced, startedStep),
+        memoryContext,
+      },
     );
 
     const generated = await this.#modelProvider.generate({

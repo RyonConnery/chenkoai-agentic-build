@@ -15,6 +15,8 @@ POST /agent/runs/:id/advance
 
 `POST /agent/runs/:id/advance` starts the next pending step and asks the configured model provider to produce output for that step. The generated output is saved on the step as `details`.
 
+Before generation, the runtime searches embedded ChenkoAI data chunks using the run goal, run context, current step title, and completed step details. The top matches are injected into the step prompt as relevant memory.
+
 ## Statuses
 
 - `queued`: run was accepted and is waiting to start.
@@ -43,6 +45,18 @@ AGENT_RUN_STORE=postgres
 ```
 
 Use memory for quick local smoke tests. Use PostgreSQL for durable agent runs, steps, and events.
+
+## Memory Retrieval
+
+Agent memory uses the same data ingestion and embedding pipeline as `/data/search`.
+
+```powershell
+DATA_STORE=postgres
+EMBEDDING_PROVIDER=mock
+AGENT_MEMORY_RESULTS=4
+```
+
+Set `AGENT_MEMORY_RESULTS=0` to disable retrieval. Increase it to include more chunks in each step prompt.
 
 ## Database Migration
 

@@ -14,14 +14,17 @@ export const AGENT_STEP_PROMPT_ID = "agent.step.output";
 export const defaultPromptTemplates: PromptTemplate[] = [
   {
     id: AGENT_STEP_PROMPT_ID,
-    version: "2026-06-21.1",
+    version: "2026-06-21.2",
     description: "Generate concrete output for the active agent run step.",
     system:
-      "You are ChenkoAI, an autonomous software-building agent. Produce concise, actionable output for the active run step.",
+      "You are ChenkoAI, an autonomous software-building agent. Use relevant memory when it helps. Produce concise, actionable output for the active run step.",
     user: [
       "Goal: {{goal}}",
       "",
       "Context: {{context}}",
+      "",
+      "Relevant memory:",
+      "{{memoryContext}}",
       "",
       "Completed steps:",
       "{{completedSteps}}",
@@ -166,6 +169,7 @@ export function createAgentStepPromptVariables(
     goal: snapshot.run.goal,
     context: snapshot.run.context ?? "None provided",
     completedSteps: completedSteps || "None",
+    memoryContext: "None",
     stepNumber: step.index + 1,
     stepTitle: step.title,
   };
