@@ -28,10 +28,12 @@ The desktop UI expects the API at `http://127.0.0.1:8787`.
 ## Operator Workflow
 
 1. Create a run with a goal, context, and max step limit.
-2. Use `Plan` to generate an explicit step plan.
-3. Use `Auto Run` to let the bounded agent loop advance through steps.
+2. Leave `Start agent automatically` checked for the normal workflow.
+3. Click `Create & Start` to create the run and immediately let the bounded agent loop advance through steps.
 4. Review the run report for status, progress, tool executions, pending permissions, and next action.
 5. Approve or deny any pending tool permission from the report panel.
+
+Use `Plan` or `Auto Run` manually only when `Start agent automatically` is unchecked or an existing run needs another step.
 
 When a permission is approved in the desktop app, the app records the decision and immediately executes the approved tool against the selected run.
 

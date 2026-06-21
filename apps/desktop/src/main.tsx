@@ -46,6 +46,7 @@ type ApiState = "checking" | "online" | "offline";
 
 function App() {
   const [apiState, setApiState] = useState<ApiState>("checking");
+  const [modelProvider, setModelProvider] = useState("unknown");
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -53,6 +54,7 @@ function App() {
   const [goal, setGoal] = useState("Build the next ChenkoAI capability");
   const [context, setContext] = useState("Use memory, planning, safe tools, and reports.");
   const [maxSteps, setMaxSteps] = useState(4);
+  const [autoRunOnCreate, setAutoRunOnCreate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -63,8 +65,9 @@ function App() {
 
   async function refresh(nextRunId = selectedRunId): Promise<void> {
     try {
-      const [health, runPayload, permissionPayload] = await Promise.all([
+      const [health, modelPayload, runPayload, permissionPayload] = await Promise.all([
         apiGet<{ ok: boolean }>("/health"),
+        apiGet<{ provider: string }>("/model/provider"),
         apiGet<{ runs: RunListItem[] }>("/agent/runs"),
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
       ]);
@@ -74,6 +77,7 @@ function App() {
       }
 
       setApiState("online");
+      setModelProvider(modelPayload.provider);
       setRuns(runPayload.runs);
       setPermissions(permissionPayload.permissions);
 
@@ -82,6 +86,7 @@ function App() {
       setReport(runId ? await apiGet<RunReport>(`/agent/runs/${runId}/report`) : undefined);
     } catch {
       setApiState("offline");
+      setModelProvider("unknown");
       setReport(undefined);
     }
   }
@@ -112,7 +117,10 @@ function App() {
           <p className="eyebrow">ChenkoAI</p>
           <h1>Agent Control Center</h1>
         </div>
-        <div className={`status-pill ${apiState}`}>{apiState}</div>
+        <div className="status-row">
+          <div className="status-pill">model: {modelProvider}</div>
+          <div className={`status-pill ${apiState}`}>{apiState}</div>
+        </div>
       </header>
 
       {apiState === "offline" ? (
@@ -148,6 +156,14 @@ function App() {
                 onChange={(event) => setMaxSteps(Number(event.target.value))}
               />
             </label>
+            <label className="checkbox-row">
+              <input
+                checked={autoRunOnCreate}
+                type="checkbox"
+                onChange={(event) => setAutoRunOnCreate(event.target.checked)}
+              />
+              Start agent automatically
+            </label>
             <button
               disabled={busy || !goal.trim()}
               onClick={() =>
@@ -157,12 +173,20 @@ function App() {
                     context,
                     maxSteps,
                   });
-                  setMessage("Run created.");
+                  if (autoRunOnCreate) {
+                    await apiPost(`/agent/runs/${created.run.id}/auto`, {
+                      planFirst: true,
+                      maxCycles: Math.max(maxSteps + 4, 8),
+                    });
+                    setMessage("Run created and agent started.");
+                  } else {
+                    setMessage("Run created. Use Auto Run to start the agent.");
+                  }
                   return created.run.id;
                 })
               }
             >
-              Create Run
+              {autoRunOnCreate ? "Create & Start" : "Create Run"}
             </button>
 
             <div className="run-list">

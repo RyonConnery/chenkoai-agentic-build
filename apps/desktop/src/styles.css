@@ -69,10 +69,18 @@ button.secondary {
 .status-pill {
   border-radius: 999px;
   border: 1px solid #cfd7e6;
+  color: #516078;
   font-size: 13px;
   font-weight: 800;
   padding: 8px 12px;
   text-transform: capitalize;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .status-pill.online {
@@ -158,6 +166,18 @@ textarea {
 textarea {
   min-height: 82px;
   resize: vertical;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.checkbox-row input {
+  height: 16px;
+  margin: 0;
+  width: 16px;
 }
 
 .run-list {
