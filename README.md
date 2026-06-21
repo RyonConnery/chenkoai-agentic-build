@@ -32,6 +32,7 @@ docs/
   architecture.md
   environment.md
   model-provider.md
+  prompt-registry.md
   development-workflow.md
   roadmap.md
 ```

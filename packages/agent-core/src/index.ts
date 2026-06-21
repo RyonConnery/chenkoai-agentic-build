@@ -35,6 +35,25 @@ export type ModelGenerateResponse = {
   };
 };
 
+export type PromptTemplateVariable = string | number | boolean | null | undefined;
+
+export type PromptTemplate = {
+  id: string;
+  version: string;
+  description: string;
+  system: string;
+  user: string;
+};
+
+export type RenderedPrompt = {
+  templateId: string;
+  version: string;
+  systemPrompt: string;
+  prompt: string;
+};
+
+export type PromptTemplateVariables = Record<string, PromptTemplateVariable>;
+
 export const agentRunStatusSchema = z.enum([
   "queued",
   "planning",
