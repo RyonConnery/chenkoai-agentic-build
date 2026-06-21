@@ -28,6 +28,14 @@ Use `MODEL_PROVIDER=openai-compatible` with `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
 
 Use `MODEL_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
 
+## Embedding Provider
+
+`EMBEDDING_PROVIDER=mock` is the default for local development and does not require network access.
+
+Use `EMBEDDING_PROVIDER=openai-compatible` with `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_EMBEDDING_MODEL`.
+
+Use `EMBEDDING_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_EMBEDDING_MODEL`.
+
 ## Prompt Registry
 
 `PROMPT_REGISTRY_STORE=memory` uses built-in prompt templates.

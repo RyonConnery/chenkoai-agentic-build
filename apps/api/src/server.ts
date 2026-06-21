@@ -1,14 +1,19 @@
 import Fastify from "fastify";
 import {
   type AgentRunRequest,
+  type DataSearchRequest,
+  type EmbeddingRebuildRequest,
   type ModelGenerateRequest,
   type PromptTemplateMutationRequest,
   type TextIngestRequest,
+  normalizeDataSearchRequest,
+  normalizeEmbeddingRebuildRequest,
 } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { createDataStore } from "./dataPersistence.js";
+import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
 
@@ -16,6 +21,7 @@ const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
+const embeddingProvider = createEmbeddingProviderAdapter();
 const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentRuntime = new AgentRuntime(agentRunStore, modelProvider, promptRegistry);
@@ -27,6 +33,10 @@ server.get("/health", async () => ({
 
 server.get("/model/provider", async () => ({
   provider: modelProvider.provider,
+}));
+
+server.get("/embeddings/provider", async () => ({
+  provider: embeddingProvider.provider,
 }));
 
 server.post<{ Body: ModelGenerateRequest }>("/model/generate", async (request) => {
@@ -58,6 +68,46 @@ server.get<{ Params: { id: string } }>("/data/documents/:id", async (request, re
 server.get<{ Params: { id: string } }>("/data/documents/:id/chunks", async (request) => ({
   chunks: await dataStore.listChunks(request.params.id),
 }));
+
+server.post<{ Body: EmbeddingRebuildRequest }>(
+  "/data/embeddings/rebuild",
+  async (request) => {
+    const rebuildRequest = normalizeEmbeddingRebuildRequest(request.body ?? {});
+    const chunks = await dataStore.listChunksNeedingEmbedding(
+      rebuildRequest.limit,
+      rebuildRequest.datasetId,
+    );
+    let model = "";
+
+    for (const chunk of chunks) {
+      const response = await embeddingProvider.embed(chunk.content);
+      model = response.model;
+      await dataStore.saveChunkEmbedding(chunk.id, response.embedding, response.model);
+    }
+
+    return {
+      provider: embeddingProvider.provider,
+      model,
+      embeddedChunks: chunks.length,
+    };
+  },
+);
+
+server.post<{ Body: DataSearchRequest }>("/data/search", async (request) => {
+  const searchRequest = normalizeDataSearchRequest(request.body);
+  const response = await embeddingProvider.embed(searchRequest.query);
+  const results = await dataStore.searchChunks({
+    embedding: response.embedding,
+    datasetId: searchRequest.datasetId,
+    limit: searchRequest.limit,
+  });
+
+  return {
+    provider: response.provider,
+    model: response.model,
+    results,
+  };
+});
 
 server.get("/prompts", async () => ({
   prompts: await promptRegistry.list(),
@@ -141,7 +191,7 @@ server.post<{ Params: { id: string } }>(
 server.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
     return reply.code(400).send({
-      error: "invalid_agent_run_request",
+      error: "invalid_request",
       details: error.issues,
     });
   }

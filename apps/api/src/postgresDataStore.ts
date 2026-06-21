@@ -3,6 +3,7 @@ import {
   type DataChunk,
   type DataDataset,
   type DataDocument,
+  type DataSearchResult,
   type TextIngestRequest,
   type TextIngestResult,
 } from "@chenkoai/agent-core";
@@ -44,6 +45,16 @@ type ChunkRow = QueryResultRow & {
   token_estimate: number;
   metadata: Record<string, unknown>;
   created_at: Date;
+  embedding_model: string | null;
+  embedded_at: Date | null;
+};
+
+type ChunkSearchRow = ChunkRow & {
+  document_title: string;
+  document_source_type: DataDocument["sourceType"];
+  document_source_uri: string | null;
+  dataset_name: string;
+  distance: string;
 };
 
 export class PostgresDataStore implements DataStore {
@@ -164,7 +175,8 @@ export class PostgresDataStore implements DataStore {
 
   async listChunks(documentId: string): Promise<DataChunk[]> {
     const result = await this.#pool.query<ChunkRow>(
-      `select id, document_id, dataset_id, chunk_index, content, token_estimate, metadata, created_at
+      `select id, document_id, dataset_id, chunk_index, content, token_estimate,
+              metadata, created_at, embedding_model, embedded_at
        from data_chunks
        where document_id = $1
        order by chunk_index asc`,
@@ -172,6 +184,74 @@ export class PostgresDataStore implements DataStore {
     );
 
     return result.rows.map(mapChunk);
+  }
+
+  async listChunksNeedingEmbedding(limit: number, datasetId?: string): Promise<DataChunk[]> {
+    const params: Array<string | number> = datasetId ? [datasetId, limit] : [limit];
+    const result = await this.#pool.query<ChunkRow>(
+      `select id, document_id, dataset_id, chunk_index, content, token_estimate,
+              metadata, created_at, embedding_model, embedded_at
+       from data_chunks
+       where embedding is null
+       ${datasetId ? "and dataset_id = $1" : ""}
+       order by created_at asc, chunk_index asc
+       limit $${datasetId ? 2 : 1}`,
+      params,
+    );
+
+    return result.rows.map(mapChunk);
+  }
+
+  async saveChunkEmbedding(chunkId: string, embedding: number[], model: string): Promise<void> {
+    await this.#pool.query(
+      `update data_chunks
+       set embedding = $2::vector,
+           embedding_model = $3,
+           embedded_at = now()
+       where id = $1`,
+      [chunkId, toVector(embedding), model],
+    );
+  }
+
+  async searchChunks(input: {
+    embedding: number[];
+    datasetId?: string;
+    limit: number;
+  }): Promise<DataSearchResult[]> {
+    const params: Array<string | number> = input.datasetId
+      ? [toVector(input.embedding), input.datasetId, input.limit]
+      : [toVector(input.embedding), input.limit];
+    const result = await this.#pool.query<ChunkSearchRow>(
+      `select c.id, c.document_id, c.dataset_id, c.chunk_index, c.content,
+              c.token_estimate, c.metadata, c.created_at, c.embedding_model,
+              c.embedded_at, d.title as document_title,
+              d.source_type as document_source_type, d.source_uri as document_source_uri,
+              ds.name as dataset_name,
+              (c.embedding <=> $1::vector)::text as distance
+       from data_chunks c
+       join data_documents d on d.id = c.document_id
+       join data_datasets ds on ds.id = c.dataset_id
+       where c.embedding is not null
+       ${input.datasetId ? "and c.dataset_id = $2" : ""}
+       order by c.embedding <=> $1::vector
+       limit $${input.datasetId ? 3 : 2}`,
+      params,
+    );
+
+    return result.rows.map((row) => ({
+      chunk: mapChunk(row),
+      document: {
+        id: row.document_id,
+        title: row.document_title,
+        sourceType: row.document_source_type,
+        sourceUri: row.document_source_uri ?? undefined,
+      },
+      dataset: {
+        id: row.dataset_id,
+        name: row.dataset_name,
+      },
+      distance: Number(row.distance),
+    }));
   }
 
   async #getOrCreateDataset(
@@ -241,9 +321,15 @@ function mapChunk(row: ChunkRow): DataChunk {
     tokenEstimate: row.token_estimate,
     metadata: row.metadata,
     createdAt: toIso(row.created_at),
+    embeddingModel: row.embedding_model ?? undefined,
+    embeddedAt: row.embedded_at ? toIso(row.embedded_at) : undefined,
   };
 }
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
+}
+
+function toVector(values: number[]): string {
+  return `[${values.join(",")}]`;
 }

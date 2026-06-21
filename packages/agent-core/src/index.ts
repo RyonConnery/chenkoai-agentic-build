@@ -8,6 +8,8 @@ export const agentRunRequestSchema = z.object({
 
 export const modelProviderSchema = z.enum(["mock", "openai-compatible", "local-http"]);
 
+export const embeddingProviderSchema = z.enum(["mock", "openai-compatible", "local-http"]);
+
 export const modelGenerateRequestSchema = z.object({
   prompt: z.string().min(1),
   systemPrompt: z.string().optional(),
@@ -33,9 +35,21 @@ export const textIngestRequestSchema = z.object({
   metadata: z.record(z.unknown()).default({}),
 });
 
+export const embeddingRebuildRequestSchema = z.object({
+  datasetId: z.string().optional(),
+  limit: z.number().int().positive().max(500).default(100),
+});
+
+export const dataSearchRequestSchema = z.object({
+  query: z.string().min(1),
+  datasetId: z.string().optional(),
+  limit: z.number().int().positive().max(50).default(8),
+});
+
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
 export type NormalizedAgentRunRequest = z.output<typeof agentRunRequestSchema>;
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
+export type EmbeddingProvider = z.infer<typeof embeddingProviderSchema>;
 export type ModelGenerateRequest = z.input<typeof modelGenerateRequestSchema>;
 export type NormalizedModelGenerateRequest = z.output<typeof modelGenerateRequestSchema>;
 export type PromptTemplateMutationRequest = z.input<typeof promptTemplateMutationSchema>;
@@ -44,6 +58,10 @@ export type NormalizedPromptTemplateMutationRequest = z.output<
 >;
 export type TextIngestRequest = z.input<typeof textIngestRequestSchema>;
 export type NormalizedTextIngestRequest = z.output<typeof textIngestRequestSchema>;
+export type EmbeddingRebuildRequest = z.input<typeof embeddingRebuildRequestSchema>;
+export type NormalizedEmbeddingRebuildRequest = z.output<typeof embeddingRebuildRequestSchema>;
+export type DataSearchRequest = z.input<typeof dataSearchRequestSchema>;
+export type NormalizedDataSearchRequest = z.output<typeof dataSearchRequestSchema>;
 
 export type ModelGenerateResponse = {
   provider: ModelProvider;
@@ -111,12 +129,27 @@ export type DataChunk = {
   tokenEstimate: number;
   metadata: Record<string, unknown>;
   createdAt: string;
+  embeddingModel?: string;
+  embeddedAt?: string;
 };
 
 export type TextIngestResult = {
   dataset: DataDataset;
   document: DataDocument;
   chunks: DataChunk[];
+};
+
+export type DataSearchResult = {
+  chunk: DataChunk;
+  document: Pick<DataDocument, "id" | "title" | "sourceType" | "sourceUri">;
+  dataset: Pick<DataDataset, "id" | "name">;
+  distance: number;
+};
+
+export type EmbeddingRebuildResult = {
+  provider: EmbeddingProvider;
+  model: string;
+  embeddedChunks: number;
 };
 
 export const agentRunStatusSchema = z.enum([
@@ -195,6 +228,16 @@ export function normalizeTextIngestRequest(
   input: TextIngestRequest,
 ): NormalizedTextIngestRequest {
   return textIngestRequestSchema.parse(input);
+}
+
+export function normalizeEmbeddingRebuildRequest(
+  input: EmbeddingRebuildRequest,
+): NormalizedEmbeddingRebuildRequest {
+  return embeddingRebuildRequestSchema.parse(input);
+}
+
+export function normalizeDataSearchRequest(input: DataSearchRequest): NormalizedDataSearchRequest {
+  return dataSearchRequestSchema.parse(input);
 }
 
 export function createInitialAgentRun(input: AgentRunRequest, now = new Date()): AgentRun {
