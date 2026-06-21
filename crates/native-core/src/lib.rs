@@ -9,4 +9,3 @@ pub fn local_capabilities() -> Vec<&'static str> {
         "future-local-inference",
     ]
 }
-

@@ -44,7 +44,7 @@ npm install
 npm run check
 ```
 
-Rust is not currently available in this Codex environment, so the Rust crate is scaffolded but not verified yet.
+Rust is installed and the native workspace has been verified with Cargo.
 
 ## Development Commands
 
@@ -52,6 +52,8 @@ Rust is not currently available in this Codex environment, so the Rust crate is 
 npm run dev
 npm run check
 npm run format
+cargo check
+cargo fmt --check
 ```
 
 ## Security Note
