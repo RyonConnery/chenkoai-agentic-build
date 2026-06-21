@@ -1,29 +1,29 @@
 # Desktop Control Center
 
-The desktop app now provides an operator console for ChenkoAI agent runs. It connects to the local API, creates runs, plans work, starts bounded autonomous loops, and handles tool approval requests.
+The desktop app now provides an operator console for ChenkoAI agent runs. It opens as a Tauri Windows shell, starts the local API for this repo checkout, creates runs, plans work, starts bounded autonomous loops, and handles tool approval requests.
 
 ## Start Locally
 
-Start the API first:
+Run the native desktop shell:
 
 ```powershell
-$env:DATA_STORE='memory'
-$env:EMBEDDING_PROVIDER='mock'
-$env:MODEL_PROVIDER='mock'
-$env:AGENT_RUN_STORE='memory'
-$env:PROMPT_REGISTRY_STORE='memory'
-$env:TOOL_PERMISSION_STORE='memory'
-$env:CHENKOAI_WORKSPACE_ROOT='C:\Users\rtc12\Documents\Codex\2026-06-21\when\chenkoai-agentic-build\local-workspace'
-npx tsx apps/api/src/server.ts
+npm run tauri:dev --workspace @chenkoai/desktop
 ```
 
-Then run the desktop app:
+This starts the React desktop UI and the local ChenkoAI API automatically.
+
+To build the Windows installer:
 
 ```powershell
-npm run dev --workspace @chenkoai/desktop
+npm run tauri:build --workspace @chenkoai/desktop
 ```
 
-The desktop expects the API at `http://127.0.0.1:8787`.
+Build outputs:
+
+- `target\release\chenkoai-agentic-build-desktop.exe`
+- `target\release\bundle\nsis\ChenkoAI Agentic Build_0.1.0_x64-setup.exe`
+
+The desktop UI expects the API at `http://127.0.0.1:8787`.
 
 ## Operator Workflow
 
@@ -53,5 +53,6 @@ Expected result:
 ## Production Notes
 
 - The API sends CORS headers for the desktop origin. Use `CHENKOAI_DESKTOP_ORIGIN` to restrict it in packaged builds.
+- The current packaged app starts the API from this repo checkout. A future sidecar build should bundle the API so the installer can run independently on machines without Node.js or the source tree.
 - Real desktop packaging should move the API base URL into desktop configuration instead of keeping it hardcoded.
 - Durable operation should use PostgreSQL-backed stores instead of memory stores.

@@ -58,6 +58,8 @@ Rust is installed and the native workspace has been verified with Cargo.
 
 ```powershell
 npm run dev
+npm run tauri:dev --workspace @chenkoai/desktop
+npm run tauri:build --workspace @chenkoai/desktop
 npm run check
 npm run check:all
 npm run format

@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 target/
+apps/desktop/src-tauri/gen/
 .next/
 out/
 
@@ -29,4 +30,3 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
-
