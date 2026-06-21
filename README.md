@@ -30,6 +30,7 @@ infra/
 docs/
   agent-run-lifecycle.md
   architecture.md
+  data-ingestion.md
   environment.md
   model-provider.md
   prompt-registry.md

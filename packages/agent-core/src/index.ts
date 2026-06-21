@@ -24,6 +24,15 @@ export const promptTemplateMutationSchema = z.object({
   activate: z.boolean().default(true),
 });
 
+export const textIngestRequestSchema = z.object({
+  datasetName: z.string().min(1).default("default"),
+  title: z.string().min(1),
+  sourceType: z.enum(["manual", "file", "url", "api"]).default("manual"),
+  sourceUri: z.string().optional(),
+  text: z.string().min(1),
+  metadata: z.record(z.unknown()).default({}),
+});
+
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
 export type NormalizedAgentRunRequest = z.output<typeof agentRunRequestSchema>;
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
@@ -33,6 +42,8 @@ export type PromptTemplateMutationRequest = z.input<typeof promptTemplateMutatio
 export type NormalizedPromptTemplateMutationRequest = z.output<
   typeof promptTemplateMutationSchema
 >;
+export type TextIngestRequest = z.input<typeof textIngestRequestSchema>;
+export type NormalizedTextIngestRequest = z.output<typeof textIngestRequestSchema>;
 
 export type ModelGenerateResponse = {
   provider: ModelProvider;
@@ -70,6 +81,43 @@ export type RenderedPrompt = {
 };
 
 export type PromptTemplateVariables = Record<string, PromptTemplateVariable>;
+
+export type DataDataset = {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DataDocument = {
+  id: string;
+  datasetId: string;
+  title: string;
+  sourceType: "manual" | "file" | "url" | "api";
+  sourceUri?: string;
+  metadata: Record<string, unknown>;
+  contentHash: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DataChunk = {
+  id: string;
+  documentId: string;
+  datasetId: string;
+  chunkIndex: number;
+  content: string;
+  tokenEstimate: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type TextIngestResult = {
+  dataset: DataDataset;
+  document: DataDocument;
+  chunks: DataChunk[];
+};
 
 export const agentRunStatusSchema = z.enum([
   "queued",
@@ -141,6 +189,12 @@ export function normalizePromptTemplateMutationRequest(
   input: PromptTemplateMutationRequest,
 ): NormalizedPromptTemplateMutationRequest {
   return promptTemplateMutationSchema.parse(input);
+}
+
+export function normalizeTextIngestRequest(
+  input: TextIngestRequest,
+): NormalizedTextIngestRequest {
+  return textIngestRequestSchema.parse(input);
 }
 
 export function createInitialAgentRun(input: AgentRunRequest, now = new Date()): AgentRun {

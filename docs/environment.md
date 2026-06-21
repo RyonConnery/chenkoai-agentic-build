@@ -34,6 +34,12 @@ Use `MODEL_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
 
 `PROMPT_REGISTRY_STORE=postgres` stores prompt templates in PostgreSQL and seeds defaults at API startup.
 
+## Data Store
+
+`DATA_STORE=memory` keeps ingested data in-process for quick tests.
+
+`DATA_STORE=postgres` stores datasets, documents, and chunks in PostgreSQL.
+
 ## Agent Run Storage
 
 `AGENT_RUN_STORE=memory` keeps runs in-process for quick local development.

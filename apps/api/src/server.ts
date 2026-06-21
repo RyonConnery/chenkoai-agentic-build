@@ -3,16 +3,19 @@ import {
   type AgentRunRequest,
   type ModelGenerateRequest,
   type PromptTemplateMutationRequest,
+  type TextIngestRequest,
 } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
+import { createDataStore } from "./dataPersistence.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
+const dataStore = createDataStore();
 const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentRuntime = new AgentRuntime(agentRunStore, modelProvider, promptRegistry);
@@ -29,6 +32,32 @@ server.get("/model/provider", async () => ({
 server.post<{ Body: ModelGenerateRequest }>("/model/generate", async (request) => {
   return await modelProvider.generate(request.body);
 });
+
+server.post<{ Body: TextIngestRequest }>("/data/ingest/text", async (request, reply) => {
+  const result = await dataStore.ingestText(request.body);
+  return reply.code(201).send(result);
+});
+
+server.get("/data/datasets", async () => ({
+  datasets: await dataStore.listDatasets(),
+}));
+
+server.get<{ Querystring: { datasetId?: string } }>("/data/documents", async (request) => ({
+  documents: await dataStore.listDocuments(request.query.datasetId),
+}));
+
+server.get<{ Params: { id: string } }>("/data/documents/:id", async (request, reply) => {
+  const document = await dataStore.getDocument(request.params.id);
+  if (!document) {
+    return reply.code(404).send({ error: "data_document_not_found" });
+  }
+
+  return document;
+});
+
+server.get<{ Params: { id: string } }>("/data/documents/:id/chunks", async (request) => ({
+  chunks: await dataStore.listChunks(request.params.id),
+}));
 
 server.get("/prompts", async () => ({
   prompts: await promptRegistry.list(),
