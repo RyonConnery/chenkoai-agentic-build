@@ -17,7 +17,10 @@ GET  /tools
 POST /tools/execute
 GET  /tools/permissions
 POST /tools/permissions/:id/decision
+POST /agent/runs/:id/tools/execute
 ```
+
+Use `/tools/execute` for standalone tool testing. Use `/agent/runs/:id/tools/execute` when a tool result should be recorded on the active agent run step.
 
 ## Current Tools
 

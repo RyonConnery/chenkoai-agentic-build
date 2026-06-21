@@ -9,6 +9,7 @@ POST /agent/runs
 GET  /agent/runs
 GET  /agent/runs/:id
 POST /agent/runs/:id/advance
+POST /agent/runs/:id/tools/execute
 ```
 
 `POST /agent/run` is kept as a compatibility alias for early local testing.
@@ -16,6 +17,12 @@ POST /agent/runs/:id/advance
 `POST /agent/runs/:id/advance` starts the next pending step and asks the configured model provider to produce output for that step. The generated output is saved on the step as `details`.
 
 Before generation, the runtime searches embedded ChenkoAI data chunks using the run goal, run context, current step title, and completed step details. The top matches are injected into the step prompt as relevant memory.
+
+## Agent Tools
+
+`POST /agent/runs/:id/tools/execute` executes a local tool against the run's active step. The tool result is appended to the step details so the run keeps a transcript of actions and outputs.
+
+Permissioned tools return a permission request first. Approve the request through `/tools/permissions/:id/decision`, then retry the same agent tool call with `approvalId`.
 
 ## Statuses
 

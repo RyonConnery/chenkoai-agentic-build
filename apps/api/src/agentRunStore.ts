@@ -21,6 +21,11 @@ export interface AgentRunStore {
     stepId: string,
     details: string,
   ): Promise<AgentRunSnapshot | undefined>;
+  appendStepDetails(
+    runId: string,
+    stepId: string,
+    details: string,
+  ): Promise<AgentRunSnapshot | undefined>;
 }
 
 export class InMemoryAgentRunStore implements AgentRunStore {
@@ -148,6 +153,28 @@ export class InMemoryAgentRunStore implements AgentRunStore {
     });
 
     return this.getSnapshot(runId);
+  }
+
+  async appendStepDetails(
+    runId: string,
+    stepId: string,
+    details: string,
+  ): Promise<AgentRunSnapshot | undefined> {
+    const run = this.#runs.get(runId);
+    if (!run) {
+      return undefined;
+    }
+
+    const step = run.steps.find((candidate) => candidate.id === stepId);
+    if (!step) {
+      return undefined;
+    }
+
+    return this.updateStepDetails(
+      runId,
+      stepId,
+      [step.details, details].filter(Boolean).join("\n\n"),
+    );
   }
 
   #appendEvent(

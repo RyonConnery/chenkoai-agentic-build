@@ -15,6 +15,7 @@ import { ZodError } from "zod";
 import { AgentMemoryRetriever } from "./agentMemory.js";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
+import { AgentToolExecutor } from "./agentToolExecutor.js";
 import { createDataStore } from "./dataPersistence.js";
 import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
 import { LocalToolRegistry } from "./localTools.js";
@@ -38,6 +39,7 @@ const agentRuntime = new AgentRuntime(
   promptRegistry,
   agentMemoryRetriever,
 );
+const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
 
 server.get("/health", async () => ({
   ok: true,
@@ -224,6 +226,13 @@ server.post<{ Params: { id: string } }>(
     return snapshot;
   },
 );
+
+server.post<{
+  Body: ToolExecuteRequest;
+  Params: { id: string };
+}>("/agent/runs/:id/tools/execute", async (request) => {
+  return await agentToolExecutor.execute(request.params.id, request.body);
+});
 
 server.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
