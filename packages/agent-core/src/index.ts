@@ -46,11 +46,21 @@ export const dataSearchRequestSchema = z.object({
   limit: z.number().int().positive().max(50).default(8),
 });
 
-export const localToolNameSchema = z.enum(["workspace.list_files", "workspace.read_text_file"]);
+export const localToolNameSchema = z.enum([
+  "workspace.list_files",
+  "workspace.read_text_file",
+  "workspace.write_text_file",
+]);
 
 export const toolExecuteRequestSchema = z.object({
   name: localToolNameSchema,
   input: z.record(z.unknown()).default({}),
+  approvalId: z.string().optional(),
+});
+
+export const toolPermissionDecisionSchema = z.object({
+  approved: z.boolean(),
+  decidedBy: z.string().min(1).default("local-user"),
 });
 
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
@@ -72,6 +82,10 @@ export type NormalizedDataSearchRequest = z.output<typeof dataSearchRequestSchem
 export type LocalToolName = z.infer<typeof localToolNameSchema>;
 export type ToolExecuteRequest = z.input<typeof toolExecuteRequestSchema>;
 export type NormalizedToolExecuteRequest = z.output<typeof toolExecuteRequestSchema>;
+export type ToolPermissionDecisionRequest = z.input<typeof toolPermissionDecisionSchema>;
+export type NormalizedToolPermissionDecisionRequest = z.output<
+  typeof toolPermissionDecisionSchema
+>;
 
 export type ModelGenerateResponse = {
   provider: ModelProvider;
@@ -167,6 +181,18 @@ export type LocalToolDefinition = {
   description: string;
   inputSchema: Record<string, unknown>;
   destructive: boolean;
+  requiresApproval: boolean;
+};
+
+export type ToolPermissionRequest = {
+  id: string;
+  toolName: LocalToolName;
+  input: Record<string, unknown>;
+  status: "pending" | "approved" | "denied" | "used";
+  reason: string;
+  createdAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
 };
 
 export type ToolExecutionResult = {
@@ -174,6 +200,7 @@ export type ToolExecutionResult = {
   ok: boolean;
   output?: unknown;
   error?: string;
+  permissionRequest?: ToolPermissionRequest;
 };
 
 export const agentRunStatusSchema = z.enum([
@@ -268,6 +295,12 @@ export function normalizeToolExecuteRequest(
   input: ToolExecuteRequest,
 ): NormalizedToolExecuteRequest {
   return toolExecuteRequestSchema.parse(input);
+}
+
+export function normalizeToolPermissionDecisionRequest(
+  input: ToolPermissionDecisionRequest,
+): NormalizedToolPermissionDecisionRequest {
+  return toolPermissionDecisionSchema.parse(input);
 }
 
 export function createInitialAgentRun(input: AgentRunRequest, now = new Date()): AgentRun {
