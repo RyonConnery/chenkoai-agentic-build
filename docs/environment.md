@@ -20,3 +20,14 @@ Use `.env.example` as the source of truth for local development variables.
 
 ChenkoAI should use model provider adapters so the application can move between hosted APIs, local models, and future ChenkoAI-owned models without rewriting product workflows.
 
+## Agent Run Storage
+
+`AGENT_RUN_STORE=memory` keeps runs in-process for quick local development.
+
+`AGENT_RUN_STORE=postgres` stores runs, steps, and events in PostgreSQL using `DATABASE_URL`.
+
+Local default:
+
+```text
+DATABASE_URL=postgresql://chenkoai:chenkoai_dev_password@localhost:5432/chenkoai
+```

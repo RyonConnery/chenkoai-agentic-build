@@ -11,6 +11,7 @@
     "dev": "npm run dev --workspace @chenkoai/api",
     "check": "npm run check --workspaces --if-present",
     "check:all": "powershell -ExecutionPolicy Bypass -File scripts/check-all.ps1",
+    "db:migrate": "powershell -ExecutionPolicy Bypass -File scripts/apply-migrations.ps1",
     "format": "prettier --write ."
   },
   "devDependencies": {

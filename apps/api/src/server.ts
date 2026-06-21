@@ -1,10 +1,11 @@
 import Fastify from "fastify";
 import { type AgentRunRequest } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
-import { agentRunStore } from "./agentRunStore.js";
+import { createAgentRunStore } from "./agentRunPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
+const agentRunStore = createAgentRunStore();
 
 server.get("/health", async () => ({
   ok: true,
@@ -12,20 +13,20 @@ server.get("/health", async () => ({
 }));
 
 server.post<{ Body: AgentRunRequest }>("/agent/run", async (request) => {
-  return agentRunStore.create(request.body);
+  return await agentRunStore.create(request.body);
 });
 
 server.post<{ Body: AgentRunRequest }>("/agent/runs", async (request, reply) => {
-  const snapshot = agentRunStore.create(request.body);
+  const snapshot = await agentRunStore.create(request.body);
   return reply.code(201).send(snapshot);
 });
 
 server.get("/agent/runs", async () => ({
-  runs: agentRunStore.list(),
+  runs: await agentRunStore.list(),
 }));
 
 server.get<{ Params: { id: string } }>("/agent/runs/:id", async (request, reply) => {
-  const snapshot = agentRunStore.getSnapshot(request.params.id);
+  const snapshot = await agentRunStore.getSnapshot(request.params.id);
   if (!snapshot) {
     return reply.code(404).send({ error: "agent_run_not_found" });
   }
@@ -36,7 +37,7 @@ server.get<{ Params: { id: string } }>("/agent/runs/:id", async (request, reply)
 server.post<{ Params: { id: string } }>(
   "/agent/runs/:id/advance",
   async (request, reply) => {
-    const snapshot = agentRunStore.advance(request.params.id);
+    const snapshot = await agentRunStore.advance(request.params.id);
     if (!snapshot) {
       return reply.code(404).send({ error: "agent_run_not_found" });
     }

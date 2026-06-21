@@ -26,6 +26,7 @@ crates/
   native-core/ Rust native library for secure local operations
 infra/
   docker-compose.yml
+  migrations/
 docs/
   agent-run-lifecycle.md
   architecture.md

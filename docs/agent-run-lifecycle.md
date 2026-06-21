@@ -31,7 +31,51 @@ POST /agent/runs/:id/advance
 - `failed`
 - `skipped`
 
-## Temporary Persistence
+## Persistence
 
-The API currently uses an in-memory `AgentRunStore`. This is intentional for the first lifecycle slice. The API routes already depend on a storage boundary, so the next persistence milestone can replace that store with PostgreSQL without redesigning the route shape.
+The API can use either in-memory storage or PostgreSQL.
 
+```powershell
+AGENT_RUN_STORE=memory
+AGENT_RUN_STORE=postgres
+```
+
+Use memory for quick local smoke tests. Use PostgreSQL for durable agent runs, steps, and events.
+
+## Database Migration
+
+The first persistence migration is:
+
+```text
+infra/migrations/0001_agent_run_lifecycle.sql
+```
+
+Apply migrations with:
+
+```powershell
+npm run db:migrate
+```
+
+## Local PostgreSQL Mode
+
+Start the database services:
+
+```powershell
+docker compose -f infra/docker-compose.yml up -d postgres
+```
+
+Apply the schema:
+
+```powershell
+npm run db:migrate
+```
+
+Run the API with durable storage:
+
+```powershell
+$env:AGENT_RUN_STORE="postgres"
+$env:DATABASE_URL="postgresql://chenkoai:chenkoai_dev_password@localhost:5432/chenkoai"
+npm run dev
+```
+
+Docker and `psql` must be available on PATH for the commands above.

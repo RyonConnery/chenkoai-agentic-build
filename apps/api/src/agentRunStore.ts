@@ -11,11 +11,18 @@ export type AgentRunListItem = Pick<
   "id" | "goal" | "status" | "createdAt" | "updatedAt"
 >;
 
-export class AgentRunStore {
+export interface AgentRunStore {
+  create(input: AgentRunRequest): Promise<AgentRunSnapshot>;
+  list(): Promise<AgentRunListItem[]>;
+  getSnapshot(id: string): Promise<AgentRunSnapshot | undefined>;
+  advance(id: string): Promise<AgentRunSnapshot | undefined>;
+}
+
+export class InMemoryAgentRunStore implements AgentRunStore {
   readonly #runs = new Map<string, AgentRun>();
   readonly #events = new Map<string, AgentRunEvent[]>();
 
-  create(input: AgentRunRequest): AgentRunSnapshot {
+  async create(input: AgentRunRequest): Promise<AgentRunSnapshot> {
     const run = createInitialAgentRun(input);
     this.#runs.set(run.id, run);
     this.#events.set(run.id, [
@@ -28,10 +35,10 @@ export class AgentRunStore {
       },
     ]);
 
-    return this.getSnapshot(run.id)!;
+    return (await this.getSnapshot(run.id))!;
   }
 
-  list(): AgentRunListItem[] {
+  async list(): Promise<AgentRunListItem[]> {
     return [...this.#runs.values()]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(({ id, goal, status, createdAt, updatedAt }) => ({
@@ -43,7 +50,7 @@ export class AgentRunStore {
       }));
   }
 
-  getSnapshot(id: string): AgentRunSnapshot | undefined {
+  async getSnapshot(id: string): Promise<AgentRunSnapshot | undefined> {
     const run = this.#runs.get(id);
     if (!run) {
       return undefined;
@@ -55,7 +62,7 @@ export class AgentRunStore {
     };
   }
 
-  advance(id: string): AgentRunSnapshot | undefined {
+  async advance(id: string): Promise<AgentRunSnapshot | undefined> {
     const run = this.#runs.get(id);
     if (!run) {
       return undefined;
@@ -122,5 +129,3 @@ export class AgentRunStore {
     this.#events.set(runId, events);
   }
 }
-
-export const agentRunStore = new AgentRunStore();
