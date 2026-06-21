@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import {
+  type AgentAutoRunRequest,
   type AgentRunRequest,
   type DataSearchRequest,
   type EmbeddingRebuildRequest,
@@ -12,6 +13,7 @@ import {
   normalizeEmbeddingRebuildRequest,
 } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
+import { AgentAutoRunner } from "./agentAutoRunner.js";
 import { AgentMemoryRetriever } from "./agentMemory.js";
 import { AgentPlanner } from "./agentPlanner.js";
 import { createAgentRunStore } from "./agentRunPersistence.js";
@@ -43,6 +45,7 @@ const agentRuntime = new AgentRuntime(
   agentMemoryRetriever,
   agentToolExecutor,
 );
+const agentAutoRunner = new AgentAutoRunner(agentRunStore, agentPlanner, agentRuntime);
 
 server.get("/health", async () => ({
   ok: true,
@@ -238,6 +241,18 @@ server.post<{ Params: { id: string } }>(
     return snapshot;
   },
 );
+
+server.post<{
+  Body: AgentAutoRunRequest;
+  Params: { id: string };
+}>("/agent/runs/:id/auto", async (request, reply) => {
+  const result = await agentAutoRunner.run(request.params.id, request.body ?? {});
+  if (!result) {
+    return reply.code(404).send({ error: "agent_run_not_found" });
+  }
+
+  return result;
+});
 
 server.post<{
   Body: ToolExecuteRequest;

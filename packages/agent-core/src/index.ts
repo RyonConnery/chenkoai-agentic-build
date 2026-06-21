@@ -6,6 +6,11 @@ export const agentRunRequestSchema = z.object({
   maxSteps: z.number().int().positive().max(50).default(12),
 });
 
+export const agentAutoRunRequestSchema = z.object({
+  maxCycles: z.number().int().positive().max(25).default(8),
+  planFirst: z.boolean().default(true),
+});
+
 export const modelProviderSchema = z.enum(["mock", "openai-compatible", "local-http"]);
 
 export const embeddingProviderSchema = z.enum(["mock", "openai-compatible", "local-http"]);
@@ -65,6 +70,8 @@ export const toolPermissionDecisionSchema = z.object({
 
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
 export type NormalizedAgentRunRequest = z.output<typeof agentRunRequestSchema>;
+export type AgentAutoRunRequest = z.input<typeof agentAutoRunRequestSchema>;
+export type NormalizedAgentAutoRunRequest = z.output<typeof agentAutoRunRequestSchema>;
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
 export type EmbeddingProvider = z.infer<typeof embeddingProviderSchema>;
 export type ModelGenerateRequest = z.input<typeof modelGenerateRequestSchema>;
@@ -259,8 +266,24 @@ export type AgentRunSnapshot = {
   events: AgentRunEvent[];
 };
 
+export type AgentAutoRunResult = {
+  snapshot: AgentRunSnapshot;
+  cycles: number;
+  stopReason:
+    | "completed"
+    | "permission_required"
+    | "max_cycles_reached"
+    | "no_progress";
+};
+
 export function normalizeAgentRunRequest(input: AgentRunRequest): NormalizedAgentRunRequest {
   return agentRunRequestSchema.parse(input);
+}
+
+export function normalizeAgentAutoRunRequest(
+  input: AgentAutoRunRequest,
+): NormalizedAgentAutoRunRequest {
+  return agentAutoRunRequestSchema.parse(input);
 }
 
 export function normalizeModelGenerateRequest(
