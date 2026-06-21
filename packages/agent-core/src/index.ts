@@ -46,6 +46,13 @@ export const dataSearchRequestSchema = z.object({
   limit: z.number().int().positive().max(50).default(8),
 });
 
+export const localToolNameSchema = z.enum(["workspace.list_files", "workspace.read_text_file"]);
+
+export const toolExecuteRequestSchema = z.object({
+  name: localToolNameSchema,
+  input: z.record(z.unknown()).default({}),
+});
+
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
 export type NormalizedAgentRunRequest = z.output<typeof agentRunRequestSchema>;
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
@@ -62,6 +69,9 @@ export type EmbeddingRebuildRequest = z.input<typeof embeddingRebuildRequestSche
 export type NormalizedEmbeddingRebuildRequest = z.output<typeof embeddingRebuildRequestSchema>;
 export type DataSearchRequest = z.input<typeof dataSearchRequestSchema>;
 export type NormalizedDataSearchRequest = z.output<typeof dataSearchRequestSchema>;
+export type LocalToolName = z.infer<typeof localToolNameSchema>;
+export type ToolExecuteRequest = z.input<typeof toolExecuteRequestSchema>;
+export type NormalizedToolExecuteRequest = z.output<typeof toolExecuteRequestSchema>;
 
 export type ModelGenerateResponse = {
   provider: ModelProvider;
@@ -152,6 +162,20 @@ export type EmbeddingRebuildResult = {
   embeddedChunks: number;
 };
 
+export type LocalToolDefinition = {
+  name: LocalToolName;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  destructive: boolean;
+};
+
+export type ToolExecutionResult = {
+  name: LocalToolName;
+  ok: boolean;
+  output?: unknown;
+  error?: string;
+};
+
 export const agentRunStatusSchema = z.enum([
   "queued",
   "planning",
@@ -238,6 +262,12 @@ export function normalizeEmbeddingRebuildRequest(
 
 export function normalizeDataSearchRequest(input: DataSearchRequest): NormalizedDataSearchRequest {
   return dataSearchRequestSchema.parse(input);
+}
+
+export function normalizeToolExecuteRequest(
+  input: ToolExecuteRequest,
+): NormalizedToolExecuteRequest {
+  return toolExecuteRequestSchema.parse(input);
 }
 
 export function createInitialAgentRun(input: AgentRunRequest, now = new Date()): AgentRun {

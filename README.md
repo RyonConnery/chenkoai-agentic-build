@@ -32,6 +32,7 @@ docs/
   architecture.md
   data-ingestion.md
   environment.md
+  local-tools.md
   model-provider.md
   prompt-registry.md
   development-workflow.md

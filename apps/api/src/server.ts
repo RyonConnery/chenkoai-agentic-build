@@ -6,6 +6,7 @@ import {
   type ModelGenerateRequest,
   type PromptTemplateMutationRequest,
   type TextIngestRequest,
+  type ToolExecuteRequest,
   normalizeDataSearchRequest,
   normalizeEmbeddingRebuildRequest,
 } from "@chenkoai/agent-core";
@@ -15,6 +16,7 @@ import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { createDataStore } from "./dataPersistence.js";
 import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
+import { LocalToolRegistry } from "./localTools.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
 
@@ -23,6 +25,7 @@ const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
 const embeddingProvider = createEmbeddingProviderAdapter();
+const localTools = new LocalToolRegistry();
 const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
@@ -48,6 +51,14 @@ server.get("/embeddings/provider", async () => ({
 
 server.post<{ Body: ModelGenerateRequest }>("/model/generate", async (request) => {
   return await modelProvider.generate(request.body);
+});
+
+server.get("/tools", async () => ({
+  tools: localTools.list(),
+}));
+
+server.post<{ Body: ToolExecuteRequest }>("/tools/execute", async (request) => {
+  return await localTools.execute(request.body);
 });
 
 server.post<{ Body: TextIngestRequest }>("/data/ingest/text", async (request, reply) => {
