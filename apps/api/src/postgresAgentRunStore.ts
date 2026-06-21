@@ -201,6 +201,35 @@ export class PostgresAgentRunStore implements AgentRunStore {
     });
   }
 
+  async updateStepDetails(
+    runId: string,
+    stepId: string,
+    details: string,
+  ): Promise<AgentRunSnapshot | undefined> {
+    return this.#withTransaction(async (client) => {
+      const now = new Date().toISOString();
+      const result = await client.query(
+        `update agent_run_steps
+         set details = $3
+         where run_id = $1 and id = $2`,
+        [runId, stepId, details],
+      );
+
+      if (result.rowCount === 0) {
+        return undefined;
+      }
+
+      await client.query(
+        `update agent_runs
+         set updated_at = $2
+         where id = $1`,
+        [runId, now],
+      );
+
+      return this.#getSnapshotWithClient(client, runId);
+    });
+  }
+
   async #getSnapshotWithClient(
     client: PoolClient,
     id: string,

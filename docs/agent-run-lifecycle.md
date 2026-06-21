@@ -13,6 +13,8 @@ POST /agent/runs/:id/advance
 
 `POST /agent/run` is kept as a compatibility alias for early local testing.
 
+`POST /agent/runs/:id/advance` starts the next pending step and asks the configured model provider to produce output for that step. The generated output is saved on the step as `details`.
+
 ## Statuses
 
 - `queued`: run was accepted and is waiting to start.

@@ -2,12 +2,14 @@ import Fastify from "fastify";
 import { type AgentRunRequest, type ModelGenerateRequest } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
 import { createAgentRunStore } from "./agentRunPersistence.js";
+import { AgentRuntime } from "./agentRuntime.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const modelProvider = createModelProviderAdapter();
+const agentRuntime = new AgentRuntime(agentRunStore, modelProvider);
 
 server.get("/health", async () => ({
   ok: true,
@@ -47,7 +49,7 @@ server.get<{ Params: { id: string } }>("/agent/runs/:id", async (request, reply)
 server.post<{ Params: { id: string } }>(
   "/agent/runs/:id/advance",
   async (request, reply) => {
-    const snapshot = await agentRunStore.advance(request.params.id);
+    const snapshot = await agentRuntime.advance(request.params.id);
     if (!snapshot) {
       return reply.code(404).send({ error: "agent_run_not_found" });
     }
