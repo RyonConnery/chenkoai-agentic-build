@@ -49,6 +49,14 @@ const agentRuntime = new AgentRuntime(
 );
 const agentAutoRunner = new AgentAutoRunner(agentRunStore, agentPlanner, agentRuntime);
 
+server.addHook("onRequest", async (_request, reply) => {
+  reply.header("Access-Control-Allow-Origin", process.env.CHENKOAI_DESKTOP_ORIGIN ?? "*");
+  reply.header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+  reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+});
+
+server.options("/*", async (_request, reply) => reply.code(204).send());
+
 server.get("/health", async () => ({
   ok: true,
   service: "chenkoai-api",

@@ -31,6 +31,7 @@ docs/
   agent-run-lifecycle.md
   architecture.md
   data-ingestion.md
+  desktop-control-center.md
   environment.md
   local-tools.md
   model-provider.md
