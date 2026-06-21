@@ -102,7 +102,7 @@ export class LocalToolRegistry {
     const request = normalizeToolExecuteRequest(input);
 
     try {
-      const permissionResult = this.#ensurePermission(request);
+      const permissionResult = await this.#ensurePermission(request);
       if (permissionResult) {
         return permissionResult;
       }
@@ -221,7 +221,9 @@ export class LocalToolRegistry {
     };
   }
 
-  #ensurePermission(request: ReturnType<typeof normalizeToolExecuteRequest>): ToolExecutionResult | undefined {
+  async #ensurePermission(
+    request: ReturnType<typeof normalizeToolExecuteRequest>,
+  ): Promise<ToolExecutionResult | undefined> {
     const definition = this.list().find((tool) => tool.name === request.name);
     if (!definition?.requiresApproval) {
       return undefined;
@@ -229,11 +231,11 @@ export class LocalToolRegistry {
 
     if (
       request.approvalId &&
-      this.#permissionStore.consumeApproved({
+      (await this.#permissionStore.consumeApproved({
         approvalId: request.approvalId,
         toolName: request.name,
         toolInput: request.input,
-      })
+      }))
     ) {
       return undefined;
     }
@@ -242,7 +244,7 @@ export class LocalToolRegistry {
       name: request.name,
       ok: false,
       error: "permission_required",
-      permissionRequest: this.#permissionStore.create({
+      permissionRequest: await this.#permissionStore.create({
         toolName: request.name,
         toolInput: request.input,
         reason: `${request.name} requires approval before execution.`,

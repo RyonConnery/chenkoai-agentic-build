@@ -6,9 +6,12 @@ ChenkoAI exposes a guarded local tool registry for autonomous project work.
 
 ```text
 CHENKOAI_WORKSPACE_ROOT=.
+TOOL_PERMISSION_STORE=memory
+TOOL_PERMISSION_STORE=postgres
 ```
 
 Tool paths must be relative to this workspace root. Absolute paths and `..` escapes are rejected.
+Use `postgres` when pending approvals and decisions should survive API restarts.
 
 ## API
 

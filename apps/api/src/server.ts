@@ -21,14 +21,14 @@ import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
 import { LocalToolRegistry } from "./localTools.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
-import { ToolPermissionStore } from "./toolPermissions.js";
+import { createToolPermissionStore } from "./toolPermissionPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
 const embeddingProvider = createEmbeddingProviderAdapter();
-const toolPermissions = new ToolPermissionStore();
+const toolPermissions = createToolPermissionStore();
 const localTools = new LocalToolRegistry(toolPermissions);
 const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
@@ -67,14 +67,14 @@ server.post<{ Body: ToolExecuteRequest }>("/tools/execute", async (request) => {
 });
 
 server.get("/tools/permissions", async () => ({
-  permissions: toolPermissions.list(),
+  permissions: await toolPermissions.list(),
 }));
 
 server.post<{
   Body: ToolPermissionDecisionRequest;
   Params: { id: string };
 }>("/tools/permissions/:id/decision", async (request, reply) => {
-  const permission = toolPermissions.decide(request.params.id, request.body);
+  const permission = await toolPermissions.decide(request.params.id, request.body);
   if (!permission) {
     return reply.code(404).send({ error: "tool_permission_not_found" });
   }

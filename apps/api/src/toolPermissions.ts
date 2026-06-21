@@ -5,14 +5,32 @@ import {
   type ToolPermissionRequest,
 } from "@chenkoai/agent-core";
 
-export class ToolPermissionStore {
-  readonly #requests = new Map<string, ToolPermissionRequest & { inputKey: string }>();
-
+export interface ToolPermissionStore {
   create(input: {
     toolName: LocalToolName;
     toolInput: Record<string, unknown>;
     reason: string;
-  }): ToolPermissionRequest {
+  }): Promise<ToolPermissionRequest>;
+  list(): Promise<ToolPermissionRequest[]>;
+  decide(
+    id: string,
+    input: ToolPermissionDecisionRequest,
+  ): Promise<ToolPermissionRequest | undefined>;
+  consumeApproved(input: {
+    approvalId: string;
+    toolName: LocalToolName;
+    toolInput: Record<string, unknown>;
+  }): Promise<boolean>;
+}
+
+export class InMemoryToolPermissionStore implements ToolPermissionStore {
+  readonly #requests = new Map<string, ToolPermissionRequest & { inputKey: string }>();
+
+  async create(input: {
+    toolName: LocalToolName;
+    toolInput: Record<string, unknown>;
+    reason: string;
+  }): Promise<ToolPermissionRequest> {
     const now = new Date().toISOString();
     const request: ToolPermissionRequest & { inputKey: string } = {
       id: crypto.randomUUID(),
@@ -28,13 +46,16 @@ export class ToolPermissionStore {
     return toPublicRequest(request);
   }
 
-  list(): ToolPermissionRequest[] {
+  async list(): Promise<ToolPermissionRequest[]> {
     return [...this.#requests.values()]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(toPublicRequest);
   }
 
-  decide(id: string, input: ToolPermissionDecisionRequest): ToolPermissionRequest | undefined {
+  async decide(
+    id: string,
+    input: ToolPermissionDecisionRequest,
+  ): Promise<ToolPermissionRequest | undefined> {
     const decision = normalizeToolPermissionDecisionRequest(input);
     const existing = this.#requests.get(id);
     if (!existing) {
@@ -55,11 +76,11 @@ export class ToolPermissionStore {
     return toPublicRequest(updated);
   }
 
-  consumeApproved(input: {
+  async consumeApproved(input: {
     approvalId: string;
     toolName: LocalToolName;
     toolInput: Record<string, unknown>;
-  }): boolean {
+  }): Promise<boolean> {
     const existing = this.#requests.get(input.approvalId);
     if (!existing || existing.status !== "approved") {
       return false;
@@ -88,7 +109,7 @@ function toPublicRequest(
   return publicRequest;
 }
 
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
   return JSON.stringify(sortValue(value));
 }
 

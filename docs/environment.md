@@ -54,6 +54,12 @@ Use `EMBEDDING_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_EMBEDDI
 
 `AGENT_RUN_STORE=postgres` stores runs, steps, and events in PostgreSQL using `DATABASE_URL`.
 
+## Tool Permission Storage
+
+`TOOL_PERMISSION_STORE=memory` keeps permission requests in-process for quick local development.
+
+`TOOL_PERMISSION_STORE=postgres` stores permission requests, approvals, denials, and used approvals in PostgreSQL.
+
 Local default:
 
 ```text
