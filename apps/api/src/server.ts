@@ -13,6 +13,7 @@ import {
 } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
 import { AgentMemoryRetriever } from "./agentMemory.js";
+import { AgentPlanner } from "./agentPlanner.js";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { AgentToolExecutor } from "./agentToolExecutor.js";
@@ -34,6 +35,7 @@ const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
 const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
+const agentPlanner = new AgentPlanner(agentRunStore, modelProvider);
 const agentRuntime = new AgentRuntime(
   agentRunStore,
   modelProvider,
@@ -209,6 +211,15 @@ server.get("/agent/runs", async () => ({
 
 server.get<{ Params: { id: string } }>("/agent/runs/:id", async (request, reply) => {
   const snapshot = await agentRunStore.getSnapshot(request.params.id);
+  if (!snapshot) {
+    return reply.code(404).send({ error: "agent_run_not_found" });
+  }
+
+  return snapshot;
+});
+
+server.post<{ Params: { id: string } }>("/agent/runs/:id/plan", async (request, reply) => {
+  const snapshot = await agentPlanner.plan(request.params.id);
   if (!snapshot) {
     return reply.code(404).send({ error: "agent_run_not_found" });
   }

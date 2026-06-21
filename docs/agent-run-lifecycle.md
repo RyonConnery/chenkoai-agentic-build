@@ -8,11 +8,14 @@ An agent run is the core unit of autonomous work in ChenkoAI.
 POST /agent/runs
 GET  /agent/runs
 GET  /agent/runs/:id
+POST /agent/runs/:id/plan
 POST /agent/runs/:id/advance
 POST /agent/runs/:id/tools/execute
 ```
 
 `POST /agent/run` is kept as a compatibility alias for early local testing.
+
+`POST /agent/runs/:id/plan` asks the configured model provider to create goal-specific step titles, then replaces the queued default plan. Plans can only be replaced before a run starts.
 
 `POST /agent/runs/:id/advance` starts the next pending step and asks the configured model provider to produce output for that step. The generated output is saved on the step as `details`.
 

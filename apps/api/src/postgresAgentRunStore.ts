@@ -119,6 +119,55 @@ export class PostgresAgentRunStore implements AgentRunStore {
     };
   }
 
+  async replacePlan(id: string, plan: string[]): Promise<AgentRunSnapshot | undefined> {
+    return this.#withTransaction(async (client) => {
+      const runResult = await client.query<AgentRunRow>(
+        `select id, status, goal, context, max_steps, plan, created_at, updated_at
+         from agent_runs
+         where id = $1
+         for update`,
+        [id],
+      );
+      const runRow = runResult.rows[0];
+      if (!runRow) {
+        return undefined;
+      }
+
+      const stepsResult = await client.query<AgentRunStepRow>(
+        `select id, run_id, step_index, title, status, details, started_at, completed_at
+         from agent_run_steps
+         where run_id = $1
+         for update`,
+        [id],
+      );
+      if (stepsResult.rows.some((step) => step.status !== "pending")) {
+        throw requestError(409, "agent_run_already_started", "Cannot replace plan after run starts");
+      }
+
+      const now = new Date().toISOString();
+      await client.query(
+        `update agent_runs
+         set plan = $2, updated_at = $3
+         where id = $1`,
+        [id, plan, now],
+      );
+      await client.query(`delete from agent_run_steps where run_id = $1`, [id]);
+
+      await Promise.all(
+        plan.map((title, index) =>
+          this.#insertStep(client, id, {
+            id: crypto.randomUUID(),
+            index,
+            title,
+            status: "pending",
+          }),
+        ),
+      );
+
+      return this.#getSnapshotWithClient(client, id);
+    });
+  }
+
   async advance(id: string): Promise<AgentRunSnapshot | undefined> {
     return this.#withTransaction(async (client) => {
       const runResult = await client.query<AgentRunRow>(
@@ -421,4 +470,8 @@ function requireSnapshot(snapshot: AgentRunSnapshot | undefined): AgentRunSnapsh
   }
 
   return snapshot;
+}
+
+function requestError(statusCode: number, code: string, message: string): Error {
+  return Object.assign(new Error(message), { statusCode, code });
 }

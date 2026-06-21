@@ -15,6 +15,7 @@ export interface AgentRunStore {
   create(input: AgentRunRequest): Promise<AgentRunSnapshot>;
   list(): Promise<AgentRunListItem[]>;
   getSnapshot(id: string): Promise<AgentRunSnapshot | undefined>;
+  replacePlan(id: string, plan: string[]): Promise<AgentRunSnapshot | undefined>;
   advance(id: string): Promise<AgentRunSnapshot | undefined>;
   updateStepDetails(
     runId: string,
@@ -70,6 +71,33 @@ export class InMemoryAgentRunStore implements AgentRunStore {
       run,
       events: this.#events.get(id) ?? [],
     };
+  }
+
+  async replacePlan(id: string, plan: string[]): Promise<AgentRunSnapshot | undefined> {
+    const run = this.#runs.get(id);
+    if (!run) {
+      return undefined;
+    }
+
+    const hasStartedSteps = run.steps.some((step) => step.status !== "pending");
+    if (hasStartedSteps) {
+      throw requestError(409, "agent_run_already_started", "Cannot replace plan after run starts");
+    }
+
+    const now = new Date().toISOString();
+    this.#runs.set(id, {
+      ...run,
+      plan,
+      steps: plan.map((title, index) => ({
+        id: crypto.randomUUID(),
+        index,
+        title,
+        status: "pending",
+      })),
+      updatedAt: now,
+    });
+
+    return this.getSnapshot(id);
   }
 
   async advance(id: string): Promise<AgentRunSnapshot | undefined> {
@@ -189,4 +217,8 @@ export class InMemoryAgentRunStore implements AgentRunStore {
     });
     this.#events.set(runId, events);
   }
+}
+
+function requestError(statusCode: number, code: string, message: string): Error {
+  return Object.assign(new Error(message), { statusCode, code });
 }
