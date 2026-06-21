@@ -24,6 +24,8 @@ Before generation, the runtime searches embedded ChenkoAI data chunks using the 
 
 Permissioned tools return a permission request first. Approve the request through `/tools/permissions/:id/decision`, then retry the same agent tool call with `approvalId`.
 
+The model can also propose a tool action during `advance` by returning a fenced `chenkoai-tool` JSON block. The runtime parses that block, routes it through the same permission gate, and appends the tool result or permission request to the active step transcript.
+
 ## Statuses
 
 - `queued`: run was accepted and is waiting to start.

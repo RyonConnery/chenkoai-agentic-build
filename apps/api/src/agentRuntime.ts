@@ -1,6 +1,8 @@
 import type { AgentRunSnapshot, AgentRunStep } from "@chenkoai/agent-core";
+import { extractToolRequest } from "./agentActionProposal.js";
 import type { AgentMemoryRetriever } from "./agentMemory.js";
 import type { AgentRunStore } from "./agentRunStore.js";
+import type { AgentToolExecutor } from "./agentToolExecutor.js";
 import type { ModelProviderAdapter } from "./modelProvider.js";
 import {
   AGENT_STEP_PROMPT_ID,
@@ -13,17 +15,20 @@ export class AgentRuntime {
   readonly #modelProvider: ModelProviderAdapter;
   readonly #promptRegistry: PromptRegistry;
   readonly #memoryRetriever?: AgentMemoryRetriever;
+  readonly #toolExecutor?: AgentToolExecutor;
 
   constructor(
     store: AgentRunStore,
     modelProvider: ModelProviderAdapter,
     promptRegistry: PromptRegistry,
     memoryRetriever?: AgentMemoryRetriever,
+    toolExecutor?: AgentToolExecutor,
   ) {
     this.#store = store;
     this.#modelProvider = modelProvider;
     this.#promptRegistry = promptRegistry;
     this.#memoryRetriever = memoryRetriever;
+    this.#toolExecutor = toolExecutor;
   }
 
   async advance(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -56,11 +61,18 @@ export class AgentRuntime {
       maxTokens: 512,
     });
 
-    return await this.#store.updateStepDetails(
+    const updated = await this.#store.updateStepDetails(
       advanced.run.id,
       startedStep.id,
       generated.text,
     );
+
+    const toolRequest = extractToolRequest(generated.text);
+    if (!toolRequest || !this.#toolExecutor) {
+      return updated;
+    }
+
+    return (await this.#toolExecutor.execute(advanced.run.id, toolRequest)).snapshot ?? updated;
   }
 }
 

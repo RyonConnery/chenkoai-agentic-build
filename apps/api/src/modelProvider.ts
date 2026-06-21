@@ -48,6 +48,7 @@ class MockModelProvider implements ModelProviderAdapter {
   async generate(input: ModelGenerateRequest): Promise<ModelGenerateResponse> {
     const request = normalizeModelGenerateRequest(input);
     const model = request.model ?? "chenkoai-mock-v1";
+    const mockToolRequest = createMockToolRequest(request.prompt);
 
     return {
       provider: this.provider,
@@ -56,6 +57,7 @@ class MockModelProvider implements ModelProviderAdapter {
         "Mock ChenkoAI model response.",
         `Prompt: ${request.prompt}`,
         request.systemPrompt ? `System: ${request.systemPrompt}` : undefined,
+        mockToolRequest,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -63,6 +65,25 @@ class MockModelProvider implements ModelProviderAdapter {
       usage: estimateUsage(request),
     };
   }
+}
+
+function createMockToolRequest(prompt: string): string | undefined {
+  const match = prompt.match(/MOCK_TOOL_WRITE:([^:\n]+):([^\n]+)/);
+  if (!match) {
+    return undefined;
+  }
+
+  return [
+    "```chenkoai-tool",
+    JSON.stringify({
+      name: "workspace.write_text_file",
+      input: {
+        path: match[1]?.trim(),
+        content: match[2]?.trim(),
+      },
+    }),
+    "```",
+  ].join("\n");
 }
 
 class OpenAiCompatibleProvider implements ModelProviderAdapter {

@@ -25,6 +25,8 @@ POST /agent/runs/:id/tools/execute
 
 Use `/tools/execute` for standalone tool testing. Use `/agent/runs/:id/tools/execute` when a tool result should be recorded on the active agent run step.
 
+Agent step generation can also propose a tool action by returning a fenced `chenkoai-tool` JSON block. Proposed actions are executed through the same permission flow as manual agent tool calls.
+
 ## Current Tools
 
 ```text

@@ -33,13 +33,14 @@ const localTools = new LocalToolRegistry(toolPermissions);
 const modelProvider = createModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
+const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
 const agentRuntime = new AgentRuntime(
   agentRunStore,
   modelProvider,
   promptRegistry,
   agentMemoryRetriever,
+  agentToolExecutor,
 );
-const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
 
 server.get("/health", async () => ({
   ok: true,
