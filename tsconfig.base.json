@@ -8,8 +8,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true,
+    "baseUrl": ".",
+    "paths": {
+      "@chenkoai/agent-core": ["packages/agent-core/src/index.ts"]
+    },
     "declaration": true,
     "sourceMap": true
   }
 }
-

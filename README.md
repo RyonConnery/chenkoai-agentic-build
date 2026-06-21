@@ -29,6 +29,7 @@ infra/
 docs/
   architecture.md
   environment.md
+  development-workflow.md
   roadmap.md
 ```
 
@@ -41,7 +42,7 @@ docs/
 
 ```powershell
 npm install
-npm run check
+npm run check:all
 ```
 
 Rust is installed and the native workspace has been verified with Cargo.
@@ -51,6 +52,7 @@ Rust is installed and the native workspace has been verified with Cargo.
 ```powershell
 npm run dev
 npm run check
+npm run check:all
 npm run format
 cargo check
 cargo fmt --check
