@@ -2,8 +2,11 @@ import {
   type AgentRunSnapshot,
   type AgentRunStep,
   type PromptTemplate,
+  type PromptTemplateMutationRequest,
   type PromptTemplateVariables,
+  type PromptTemplateVersion,
   type RenderedPrompt,
+  normalizePromptTemplateMutationRequest,
 } from "@chenkoai/agent-core";
 
 export const AGENT_STEP_PROMPT_ID = "agent.step.output";
@@ -33,24 +36,94 @@ export const defaultPromptTemplates: PromptTemplate[] = [
 export interface PromptRegistry {
   list(): Promise<PromptTemplate[]>;
   get(id: string): Promise<PromptTemplate | undefined>;
+  listVersions(id: string): Promise<PromptTemplateVersion[]>;
+  upsertVersion(
+    id: string,
+    version: string,
+    input: PromptTemplateMutationRequest,
+  ): Promise<PromptTemplateVersion>;
+  activateVersion(id: string, version: string): Promise<PromptTemplateVersion | undefined>;
   render(id: string, variables: PromptTemplateVariables): Promise<RenderedPrompt>;
 }
 
 export class InMemoryPromptRegistry implements PromptRegistry {
-  readonly #promptTemplates = new Map<string, PromptTemplate>();
+  readonly #promptTemplates = new Map<string, PromptTemplateVersion>();
 
   constructor(templates = defaultPromptTemplates) {
     for (const template of templates) {
-      this.#promptTemplates.set(template.id, template);
+      this.#promptTemplates.set(createTemplateKey(template.id, template.version), {
+        ...template,
+        active: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
     }
   }
 
   async list(): Promise<PromptTemplate[]> {
-    return [...this.#promptTemplates.values()];
+    return [...this.#promptTemplates.values()]
+      .filter((template) => template.active)
+      .map(toPromptTemplate);
   }
 
   async get(id: string): Promise<PromptTemplate | undefined> {
-    return this.#promptTemplates.get(id);
+    const template = [...this.#promptTemplates.values()].find(
+      (candidate) => candidate.id === id && candidate.active,
+    );
+
+    return template ? toPromptTemplate(template) : undefined;
+  }
+
+  async listVersions(id: string): Promise<PromptTemplateVersion[]> {
+    return [...this.#promptTemplates.values()]
+      .filter((template) => template.id === id)
+      .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  }
+
+  async upsertVersion(
+    id: string,
+    version: string,
+    input: PromptTemplateMutationRequest,
+  ): Promise<PromptTemplateVersion> {
+    const request = normalizePromptTemplateMutationRequest(input);
+    const timestamp = new Date().toISOString();
+
+    if (request.activate) {
+      this.#deactivateVersions(id);
+    }
+
+    const key = createTemplateKey(id, version);
+    const existing = this.#promptTemplates.get(key);
+    const template: PromptTemplateVersion = {
+      id,
+      version,
+      description: request.description,
+      system: request.system,
+      user: request.user,
+      active: request.activate ? true : existing?.active ?? false,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+
+    this.#promptTemplates.set(key, template);
+    return template;
+  }
+
+  async activateVersion(id: string, version: string): Promise<PromptTemplateVersion | undefined> {
+    const key = createTemplateKey(id, version);
+    const existing = this.#promptTemplates.get(key);
+    if (!existing) {
+      return undefined;
+    }
+
+    this.#deactivateVersions(id);
+    const template = {
+      ...existing,
+      active: true,
+      updatedAt: new Date().toISOString(),
+    };
+    this.#promptTemplates.set(key, template);
+    return template;
   }
 
   async render(id: string, variables: PromptTemplateVariables): Promise<RenderedPrompt> {
@@ -65,6 +138,18 @@ export class InMemoryPromptRegistry implements PromptRegistry {
       systemPrompt: renderTemplate(template.system, variables),
       prompt: renderTemplate(template.user, variables),
     };
+  }
+
+  #deactivateVersions(id: string): void {
+    for (const [key, template] of this.#promptTemplates.entries()) {
+      if (template.id === id) {
+        this.#promptTemplates.set(key, {
+          ...template,
+          active: false,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
   }
 }
 
@@ -98,4 +183,18 @@ function formatTemplateValue(value: PromptTemplateVariables[string]): string {
   }
 
   return String(value);
+}
+
+function createTemplateKey(id: string, version: string): string {
+  return `${id}@${version}`;
+}
+
+function toPromptTemplate(template: PromptTemplateVersion): PromptTemplate {
+  return {
+    id: template.id,
+    version: template.version,
+    description: template.description,
+    system: template.system,
+    user: template.user,
+  };
 }

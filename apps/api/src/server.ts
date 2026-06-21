@@ -1,5 +1,9 @@
 import Fastify from "fastify";
-import { type AgentRunRequest, type ModelGenerateRequest } from "@chenkoai/agent-core";
+import {
+  type AgentRunRequest,
+  type ModelGenerateRequest,
+  type PromptTemplateMutationRequest,
+} from "@chenkoai/agent-core";
 import { ZodError } from "zod";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
@@ -38,6 +42,38 @@ server.get<{ Params: { id: string } }>("/prompts/:id", async (request, reply) =>
 
   return prompt;
 });
+
+server.get<{ Params: { id: string } }>("/prompts/:id/versions", async (request) => ({
+  versions: await promptRegistry.listVersions(request.params.id),
+}));
+
+server.put<{
+  Body: PromptTemplateMutationRequest;
+  Params: { id: string; version: string };
+}>("/prompts/:id/versions/:version", async (request, reply) => {
+  const version = await promptRegistry.upsertVersion(
+    request.params.id,
+    request.params.version,
+    request.body,
+  );
+
+  return reply.code(201).send(version);
+});
+
+server.post<{ Params: { id: string; version: string } }>(
+  "/prompts/:id/versions/:version/activate",
+  async (request, reply) => {
+    const version = await promptRegistry.activateVersion(
+      request.params.id,
+      request.params.version,
+    );
+    if (!version) {
+      return reply.code(404).send({ error: "prompt_template_version_not_found" });
+    }
+
+    return version;
+  },
+);
 
 server.post<{ Body: AgentRunRequest }>("/agent/run", async (request) => {
   return await agentRunStore.create(request.body);

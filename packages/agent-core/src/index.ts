@@ -17,11 +17,22 @@ export const modelGenerateRequestSchema = z.object({
   model: z.string().optional(),
 });
 
+export const promptTemplateMutationSchema = z.object({
+  description: z.string().min(1),
+  system: z.string().min(1),
+  user: z.string().min(1),
+  activate: z.boolean().default(true),
+});
+
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
 export type NormalizedAgentRunRequest = z.output<typeof agentRunRequestSchema>;
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
 export type ModelGenerateRequest = z.input<typeof modelGenerateRequestSchema>;
 export type NormalizedModelGenerateRequest = z.output<typeof modelGenerateRequestSchema>;
+export type PromptTemplateMutationRequest = z.input<typeof promptTemplateMutationSchema>;
+export type NormalizedPromptTemplateMutationRequest = z.output<
+  typeof promptTemplateMutationSchema
+>;
 
 export type ModelGenerateResponse = {
   provider: ModelProvider;
@@ -43,6 +54,12 @@ export type PromptTemplate = {
   description: string;
   system: string;
   user: string;
+};
+
+export type PromptTemplateVersion = PromptTemplate & {
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type RenderedPrompt = {
@@ -118,6 +135,12 @@ export function normalizeModelGenerateRequest(
   input: ModelGenerateRequest,
 ): NormalizedModelGenerateRequest {
   return modelGenerateRequestSchema.parse(input);
+}
+
+export function normalizePromptTemplateMutationRequest(
+  input: PromptTemplateMutationRequest,
+): NormalizedPromptTemplateMutationRequest {
+  return promptTemplateMutationSchema.parse(input);
 }
 
 export function createInitialAgentRun(input: AgentRunRequest, now = new Date()): AgentRun {
