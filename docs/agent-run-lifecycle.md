@@ -56,6 +56,12 @@ Apply migrations with:
 npm run db:migrate
 ```
 
+If PostgreSQL is running through Docker Compose, use:
+
+```powershell
+npm run db:migrate:docker
+```
+
 ## Local PostgreSQL Mode
 
 Start the database services:
@@ -67,7 +73,7 @@ docker compose -f infra/docker-compose.yml up -d postgres
 Apply the schema:
 
 ```powershell
-npm run db:migrate
+npm run db:migrate:docker
 ```
 
 Run the API with durable storage:

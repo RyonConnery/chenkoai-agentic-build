@@ -31,3 +31,9 @@ Local default:
 ```text
 DATABASE_URL=postgresql://chenkoai:chenkoai_dev_password@localhost:5432/chenkoai
 ```
+
+When using Docker Compose, the default Postgres container name is:
+
+```text
+POSTGRES_CONTAINER_NAME=infra-postgres-1
+```
