@@ -1,16 +1,26 @@
 import Fastify from "fastify";
-import { type AgentRunRequest } from "@chenkoai/agent-core";
+import { type AgentRunRequest, type ModelGenerateRequest } from "@chenkoai/agent-core";
 import { ZodError } from "zod";
 import { createAgentRunStore } from "./agentRunPersistence.js";
+import { createModelProviderAdapter } from "./modelProvider.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
+const modelProvider = createModelProviderAdapter();
 
 server.get("/health", async () => ({
   ok: true,
   service: "chenkoai-api",
 }));
+
+server.get("/model/provider", async () => ({
+  provider: modelProvider.provider,
+}));
+
+server.post<{ Body: ModelGenerateRequest }>("/model/generate", async (request) => {
+  return await modelProvider.generate(request.body);
+});
 
 server.post<{ Body: AgentRunRequest }>("/agent/run", async (request) => {
   return await agentRunStore.create(request.body);

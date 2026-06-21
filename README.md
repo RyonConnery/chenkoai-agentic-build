@@ -31,6 +31,7 @@ docs/
   agent-run-lifecycle.md
   architecture.md
   environment.md
+  model-provider.md
   development-workflow.md
   roadmap.md
 ```

@@ -6,8 +6,34 @@ export const agentRunRequestSchema = z.object({
   maxSteps: z.number().int().positive().max(50).default(12),
 });
 
+export const modelProviderSchema = z.enum(["mock", "openai-compatible", "local-http"]);
+
+export const modelGenerateRequestSchema = z.object({
+  prompt: z.string().min(1),
+  systemPrompt: z.string().optional(),
+  temperature: z.number().min(0).max(2).default(0.2),
+  maxTokens: z.number().int().positive().max(8192).default(1024),
+  provider: modelProviderSchema.optional(),
+  model: z.string().optional(),
+});
+
 export type AgentRunRequest = z.input<typeof agentRunRequestSchema>;
 export type NormalizedAgentRunRequest = z.output<typeof agentRunRequestSchema>;
+export type ModelProvider = z.infer<typeof modelProviderSchema>;
+export type ModelGenerateRequest = z.input<typeof modelGenerateRequestSchema>;
+export type NormalizedModelGenerateRequest = z.output<typeof modelGenerateRequestSchema>;
+
+export type ModelGenerateResponse = {
+  provider: ModelProvider;
+  model: string;
+  text: string;
+  finishReason?: string;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
+};
 
 export const agentRunStatusSchema = z.enum([
   "queued",
@@ -67,6 +93,12 @@ export type AgentRunSnapshot = {
 
 export function normalizeAgentRunRequest(input: AgentRunRequest): NormalizedAgentRunRequest {
   return agentRunRequestSchema.parse(input);
+}
+
+export function normalizeModelGenerateRequest(
+  input: ModelGenerateRequest,
+): NormalizedModelGenerateRequest {
+  return modelGenerateRequestSchema.parse(input);
 }
 
 export function createInitialAgentRun(input: AgentRunRequest, now = new Date()): AgentRun {

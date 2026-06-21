@@ -20,6 +20,14 @@ Use `.env.example` as the source of truth for local development variables.
 
 ChenkoAI should use model provider adapters so the application can move between hosted APIs, local models, and future ChenkoAI-owned models without rewriting product workflows.
 
+## Model Provider
+
+`MODEL_PROVIDER=mock` is the default for local development.
+
+Use `MODEL_PROVIDER=openai-compatible` with `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
+
+Use `MODEL_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
+
 ## Agent Run Storage
 
 `AGENT_RUN_STORE=memory` keeps runs in-process for quick local development.
