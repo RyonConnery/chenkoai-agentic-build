@@ -85,6 +85,17 @@ type ModelSettings = {
   configPath: string;
 };
 
+type StorageSettings = {
+  storageMode: string;
+  dataStore: string;
+  agentRunStore: string;
+  promptRegistryStore: string;
+  toolPermissionStore: string;
+  databaseUrl: string;
+  hasDatabaseUrl: boolean;
+  configPath: string;
+};
+
 type ApiState = "checking" | "online" | "offline";
 
 function App() {
@@ -97,6 +108,7 @@ function App() {
   const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
   const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
+  const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [report, setReport] = useState<RunReport | undefined>();
@@ -118,6 +130,7 @@ function App() {
         health,
         modelPayload,
         settingsPayload,
+        storagePayload,
         profilePayload,
         runPayload,
         permissionPayload,
@@ -127,6 +140,7 @@ function App() {
         apiGet<{ ok: boolean }>("/health"),
         apiGet<{ provider: string }>("/model/provider"),
         apiGet<ModelSettings>("/settings/model"),
+        apiGet<StorageSettings>("/settings/storage"),
         apiGet<SystemProfile>("/system/profile"),
         apiGet<{ runs: RunListItem[] }>("/agent/runs"),
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
@@ -141,6 +155,7 @@ function App() {
       setApiState("online");
       setModelProvider(modelPayload.provider);
       setModelSettings(settingsPayload);
+      setStorageSettings(storagePayload);
       setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
       setPermissions(permissionPayload.permissions);
@@ -154,6 +169,7 @@ function App() {
       setApiState("offline");
       setModelProvider("unknown");
       setModelSettings(undefined);
+      setStorageSettings(undefined);
       setSystemProfile(undefined);
       setReport(undefined);
     }
@@ -485,6 +501,60 @@ function App() {
               </div>
             ) : (
               <p className="muted">Settings unavailable.</p>
+            )}
+            <h2>Storage Settings</h2>
+            {storageSettings ? (
+              <div className="settings-form">
+                <label>
+                  Storage mode
+                  <select
+                    value={storageSettings.storageMode}
+                    onChange={(event) =>
+                      setStorageSettings({
+                        ...storageSettings,
+                        storageMode: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="memory">Memory</option>
+                    <option value="postgres">PostgreSQL</option>
+                  </select>
+                </label>
+                <label>
+                  Database URL
+                  <input
+                    value={storageSettings.databaseUrl}
+                    onChange={(event) =>
+                      setStorageSettings({
+                        ...storageSettings,
+                        databaseUrl: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(async () => {
+                      const saved = await apiPost<StorageSettings & { restartRequired: boolean }>(
+                        "/settings/storage",
+                        storageSettings,
+                      );
+                      setStorageSettings(saved);
+                      setMessage("Storage settings saved. Restart the app to use durable storage.");
+                      return selectedRunId || undefined;
+                    })
+                  }
+                >
+                  Save Storage
+                </button>
+                <p className="muted">
+                  PostgreSQL mode stores scans, chunks, agent runs, prompts, and approvals
+                  permanently after restart.
+                </p>
+              </div>
+            ) : (
+              <p className="muted">Storage settings unavailable.</p>
             )}
             <h2>Knowledge Base</h2>
             {documents.length === 0 ? (

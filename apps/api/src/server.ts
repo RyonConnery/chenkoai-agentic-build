@@ -22,8 +22,11 @@ import { AgentRuntime } from "./agentRuntime.js";
 import { AgentToolExecutor } from "./agentToolExecutor.js";
 import {
   readModelSettings,
+  readStorageSettings,
   saveModelSettings,
+  saveStorageSettings,
   type ModelSettingsMutation,
+  type StorageSettingsMutation,
 } from "./appSettings.js";
 import { createDataStore } from "./dataPersistence.js";
 import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
@@ -85,6 +88,16 @@ server.get("/settings/model", async () => readModelSettings());
 
 server.post<{ Body: ModelSettingsMutation }>("/settings/model", async (request, reply) => {
   const settings = await saveModelSettings(request.body ?? {});
+  return reply.code(201).send({
+    ...settings,
+    restartRequired: true,
+  });
+});
+
+server.get("/settings/storage", async () => readStorageSettings());
+
+server.post<{ Body: StorageSettingsMutation }>("/settings/storage", async (request, reply) => {
+  const settings = await saveStorageSettings(request.body ?? {});
   return reply.code(201).send({
     ...settings,
     restartRequired: true,

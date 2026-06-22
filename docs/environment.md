@@ -30,6 +30,12 @@ Use `MODEL_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
 
 The desktop app can save these local settings to `.env.chenkoai.local`. This file is intentionally ignored by Git because it may contain API keys.
 
+## Durable Storage
+
+Use `DATA_STORE=postgres`, `AGENT_RUN_STORE=postgres`, `PROMPT_REGISTRY_STORE=postgres`, and `TOOL_PERMISSION_STORE=postgres` with `DATABASE_URL` to persist scans, chunks, prompts, agent runs, and tool permissions.
+
+The desktop app can save these storage settings to `.env.chenkoai.local`. Apply database migrations before restarting into PostgreSQL mode.
+
 ## Embedding Provider
 
 `EMBEDDING_PROVIDER=mock` is the default for local development and does not require network access.

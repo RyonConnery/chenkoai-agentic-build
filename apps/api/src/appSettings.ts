@@ -16,6 +16,17 @@ export type ModelSettingsResponse = {
   hasOpenAiApiKey: boolean;
 };
 
+export type StorageSettingsResponse = {
+  configPath: string;
+  storageMode: string;
+  dataStore: string;
+  agentRunStore: string;
+  promptRegistryStore: string;
+  toolPermissionStore: string;
+  databaseUrl: string;
+  hasDatabaseUrl: boolean;
+};
+
 export type ModelSettingsMutation = {
   provider?: string;
   embeddingProvider?: string;
@@ -26,6 +37,11 @@ export type ModelSettingsMutation = {
   localModel?: string;
   localEmbeddingModel?: string;
   openaiApiKey?: string;
+};
+
+export type StorageSettingsMutation = {
+  storageMode?: string;
+  databaseUrl?: string;
 };
 
 export function readModelSettings(): ModelSettingsResponse {
@@ -42,6 +58,34 @@ export function readModelSettings(): ModelSettingsResponse {
     localModel: config.LOCAL_LLM_MODEL ?? "llama3.1",
     localEmbeddingModel: config.LOCAL_EMBEDDING_MODEL ?? "nomic-embed-text",
     hasOpenAiApiKey: Boolean(config.OPENAI_API_KEY),
+  };
+}
+
+export function readStorageSettings(): StorageSettingsResponse {
+  const config = readRuntimeSettings();
+  const dataStore = config.DATA_STORE ?? "memory";
+  const agentRunStore = config.AGENT_RUN_STORE ?? "memory";
+  const promptRegistryStore = config.PROMPT_REGISTRY_STORE ?? "memory";
+  const toolPermissionStore = config.TOOL_PERMISSION_STORE ?? "memory";
+  const storageMode =
+    dataStore === "postgres" &&
+    agentRunStore === "postgres" &&
+    promptRegistryStore === "postgres" &&
+    toolPermissionStore === "postgres"
+      ? "postgres"
+      : "memory";
+
+  return {
+    configPath: settingsPath(),
+    storageMode,
+    dataStore,
+    agentRunStore,
+    promptRegistryStore,
+    toolPermissionStore,
+    databaseUrl:
+      config.DATABASE_URL ??
+      "postgresql://chenkoai:chenkoai_dev_password@localhost:5432/chenkoai",
+    hasDatabaseUrl: Boolean(config.DATABASE_URL),
   };
 }
 
@@ -72,8 +116,38 @@ export async function saveModelSettings(input: ModelSettingsMutation): Promise<M
   return readModelSettings();
 }
 
+export async function saveStorageSettings(
+  input: StorageSettingsMutation,
+): Promise<StorageSettingsResponse> {
+  const existing = await readFileSettings();
+  const storageMode = readChoice(input.storageMode, ["memory", "postgres"], "memory");
+  const next: Record<string, string> = {
+    ...existing,
+    DATA_STORE: storageMode,
+    AGENT_RUN_STORE: storageMode,
+    PROMPT_REGISTRY_STORE: storageMode,
+    TOOL_PERMISSION_STORE: storageMode,
+  };
+
+  if (storageMode === "postgres") {
+    next.DATABASE_URL = readString(
+      input.databaseUrl,
+      "postgresql://chenkoai:chenkoai_dev_password@localhost:5432/chenkoai",
+    );
+  }
+
+  await fs.writeFile(settingsPath(), serializeEnv(next), "utf8");
+  Object.assign(process.env, next);
+  return readStorageSettings();
+}
+
 function readRuntimeSettings(): Record<string, string | undefined> {
   return {
+    DATA_STORE: process.env.DATA_STORE,
+    AGENT_RUN_STORE: process.env.AGENT_RUN_STORE,
+    PROMPT_REGISTRY_STORE: process.env.PROMPT_REGISTRY_STORE,
+    TOOL_PERMISSION_STORE: process.env.TOOL_PERMISSION_STORE,
+    DATABASE_URL: process.env.DATABASE_URL,
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,

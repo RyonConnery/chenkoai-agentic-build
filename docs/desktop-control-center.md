@@ -28,14 +28,15 @@ The desktop UI expects the API at `http://127.0.0.1:8787`.
 ## Operator Workflow
 
 1. Open `Model Settings` and choose `openai-compatible` or `local-http` when a real model provider is available.
-2. Save settings and restart ChenkoAI so the local API launches with the new provider.
-3. Click `Scan Workspace` to ingest readable project files into ChenkoAI memory.
-4. Confirm the Knowledge Base document count increases.
-5. Create a run with a goal, context, and max step limit.
-6. Leave `Start agent automatically` checked for the normal workflow.
-7. Click `Create & Start` to create the run and immediately let the bounded agent loop advance through steps.
-8. Review the run report for status, progress, tool executions, pending permissions, and next action.
-9. Approve or deny any pending tool permission from the report panel.
+2. Open `Storage Settings` and choose `PostgreSQL` when durable local storage is available.
+3. Save settings and restart ChenkoAI so the local API launches with the new provider and storage mode.
+4. Click `Scan Workspace` to ingest readable project files into ChenkoAI memory.
+5. Confirm the Knowledge Base document count increases.
+6. Create a run with a goal, context, and max step limit.
+7. Leave `Start agent automatically` checked for the normal workflow.
+8. Click `Create & Start` to create the run and immediately let the bounded agent loop advance through steps.
+9. Review the run report for status, progress, tool executions, pending permissions, and next action.
+10. Approve or deny any pending tool permission from the report panel.
 
 Use `Plan` or `Auto Run` manually only when `Start agent automatically` is unchecked or an existing run needs another step.
 
@@ -60,6 +61,8 @@ Expected result:
 
 - The API sends CORS headers for the desktop origin. Use `CHENKOAI_DESKTOP_ORIGIN` to restrict it in packaged builds.
 - Model settings are written to `.env.chenkoai.local`, which is ignored by Git. Saved provider changes apply after restarting the desktop app.
+- Storage settings are also written to `.env.chenkoai.local`. PostgreSQL mode sets `DATA_STORE`, `AGENT_RUN_STORE`, `PROMPT_REGISTRY_STORE`, and `TOOL_PERMISSION_STORE` to `postgres`.
+- PostgreSQL mode requires the schema migrations in `infra/migrations` to be applied before the desktop backend starts.
 - `Scan Workspace` currently scans the configured ChenkoAI workspace root, skips build/dependency folders, ingests readable text/code files, and rebuilds embeddings for semantic memory.
 - The current packaged app starts the API from this repo checkout. A future sidecar build should bundle the API so the installer can run independently on machines without Node.js or the source tree.
 - Real desktop packaging should move the API base URL into desktop configuration instead of keeping it hardcoded.
