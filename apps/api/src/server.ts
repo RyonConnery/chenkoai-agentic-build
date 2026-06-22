@@ -223,21 +223,35 @@ server.post<{ Body: DataSearchRequest }>("/data/search", async (request) => {
 server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
   const searchRequest = normalizeDataSearchRequest(request.body);
   const finalLimit = searchRequest.limit;
+  const overviewIntent = isWorkspaceOverviewQuestion(searchRequest.query);
   const embedding = await embeddingProvider.embed(searchRequest.query);
-  const candidates = await dataStore.searchChunks({
+  let candidates = await dataStore.searchChunks({
     embedding: embedding.embedding,
     embeddingModel: embedding.model,
     datasetId: searchRequest.datasetId,
-    limit: Math.min(50, Math.max(finalLimit * 5, 20)),
+    limit: Math.min(100, Math.max(finalLimit * 8, 30)),
   });
-  const results = rerankMemoryResults(candidates, finalLimit);
-  const context = formatAnswerContext(results);
+
+  if (overviewIntent) {
+    const overviewEmbedding = await embeddingProvider.embed(workspaceOverviewSearchQuery());
+    const overviewCandidates = await dataStore.searchChunks({
+      embedding: overviewEmbedding.embedding,
+      embeddingModel: overviewEmbedding.model,
+      datasetId: searchRequest.datasetId,
+      limit: 100,
+    });
+    candidates = mergeMemoryCandidates(candidates, overviewCandidates);
+  }
+
+  const results = rerankMemoryResults(candidates, finalLimit, { overviewIntent });
+  const context = formatAnswerContext(results, { overviewIntent });
   const generated = await modelProvider.generate({
     systemPrompt: [
       "You are ChenkoAI's memory analyst.",
       "Answer using only the provided memory context.",
       "When you use a source, cite it with bracket numbers like [1].",
       "Give a direct, useful answer when the memory context contains project overview or capability details.",
+      "For workspace overview questions, summarize concrete product components, implemented capabilities, storage/model stack, and important missing production work.",
       "Only say information is missing when the provided context truly lacks it.",
     ].join(" "),
     prompt: [
@@ -444,7 +458,10 @@ function createDynamicEmbeddingProviderAdapter(): EmbeddingProviderAdapter {
   };
 }
 
-function formatAnswerContext(results: Awaited<ReturnType<typeof dataStore.searchChunks>>): string {
+function formatAnswerContext(
+  results: Awaited<ReturnType<typeof dataStore.searchChunks>>,
+  options: { overviewIntent?: boolean } = {},
+): string {
   return results
     .map((result, index) =>
       [
@@ -452,6 +469,7 @@ function formatAnswerContext(results: Awaited<ReturnType<typeof dataStore.search
         `Dataset: ${result.dataset.name}`,
         result.document.sourceUri ? `Source: ${result.document.sourceUri}` : undefined,
         `Distance: ${result.distance.toFixed(4)}`,
+        options.overviewIntent ? `Source role: ${memoryResultRole(result)}` : undefined,
         result.chunk.content,
       ]
         .filter(Boolean)
@@ -463,9 +481,11 @@ function formatAnswerContext(results: Awaited<ReturnType<typeof dataStore.search
 function rerankMemoryResults(
   results: Awaited<ReturnType<typeof dataStore.searchChunks>>,
   limit: number,
+  options: { overviewIntent?: boolean } = {},
 ): Awaited<ReturnType<typeof dataStore.searchChunks>> {
   const ranked = [...results].sort(
-    (left, right) => memoryResultScore(right) - memoryResultScore(left),
+    (left, right) =>
+      memoryResultScore(right, options) - memoryResultScore(left, options),
   );
   const selected: typeof ranked = [];
   const seenSources = new Set<string>();
@@ -510,7 +530,10 @@ function memoryResultSourceKey(
     .toLowerCase();
 }
 
-function memoryResultScore(result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number]): number {
+function memoryResultScore(
+  result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number],
+  options: { overviewIntent?: boolean } = {},
+): number {
   const source = memoryResultSourceKey(result);
   const title = result.document.title.toLowerCase();
   const metadata = result.chunk.metadata as { kind?: unknown; generated?: unknown };
@@ -541,7 +564,84 @@ function memoryResultScore(result: Awaited<ReturnType<typeof dataStore.searchChu
     score -= 0.6;
   }
 
+  if (options.overviewIntent) {
+    if (source === "readme.md" || title === "readme.md") {
+      score += 2.4;
+    }
+    if (source === "docs/architecture.md") {
+      score += 2.1;
+    }
+    if (source === "docs/roadmap.md" || source === "docs/data-ingestion.md") {
+      score += 1.5;
+    }
+    if (source.endsWith("cargo.toml") || source.endsWith("package.json")) {
+      score -= 1.2;
+    }
+    if (source.startsWith("apps/") || source.startsWith("packages/") || source.startsWith("crates/")) {
+      score -= 0.9;
+    }
+    if (source.includes("localtools")) {
+      score -= 1.4;
+    }
+  }
+
   return score;
+}
+
+function mergeMemoryCandidates(
+  left: Awaited<ReturnType<typeof dataStore.searchChunks>>,
+  right: Awaited<ReturnType<typeof dataStore.searchChunks>>,
+): Awaited<ReturnType<typeof dataStore.searchChunks>> {
+  const candidates = new Map<string, Awaited<ReturnType<typeof dataStore.searchChunks>>[number]>();
+
+  for (const result of [...left, ...right]) {
+    const existing = candidates.get(result.chunk.id);
+    if (!existing || result.distance < existing.distance) {
+      candidates.set(result.chunk.id, result);
+    }
+  }
+
+  return [...candidates.values()];
+}
+
+function isWorkspaceOverviewQuestion(query: string): boolean {
+  const normalized = query.toLowerCase();
+  return [
+    "what does this workspace contain",
+    "what is in this workspace",
+    "main parts",
+    "project contain",
+    "workspace contain",
+    "what is this project",
+    "overview",
+  ].some((phrase) => normalized.includes(phrase));
+}
+
+function workspaceOverviewSearchQuery(): string {
+  return [
+    "ChenkoAI workspace overview repository layout architecture roadmap current implemented capabilities",
+    "desktop control center local API Ollama PostgreSQL pgvector memory scanner agent runtime",
+    "core stack TypeScript Rust Python data ingestion durable storage prompts tools infrastructure",
+  ].join(" ");
+}
+
+function memoryResultRole(
+  result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number],
+): string {
+  const source = memoryResultSourceKey(result);
+  if (source === "chenkoai://workspace-overview") {
+    return "generated project overview";
+  }
+  if (source === "readme.md") {
+    return "repository layout and stack";
+  }
+  if (source.startsWith("docs/")) {
+    return "architecture documentation";
+  }
+  if (source.endsWith("package.json") || source.endsWith("cargo.toml")) {
+    return "build configuration";
+  }
+  return "implementation detail";
 }
 
 async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
