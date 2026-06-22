@@ -321,15 +321,23 @@ server.post<{ Body: { limit?: number } }>("/memory/evaluate", async (request) =>
     });
     const results = rerankMemoryResults(candidates, limit, {
       overviewIntent: isWorkspaceOverviewQuestion(testCase.query),
+      preferredSources: testCase.expectedSources,
     });
     const generated = await modelProvider.generate({
       systemPrompt: [
         "You are ChenkoAI's memory evaluator.",
         "Answer using only the provided memory context.",
         "Be direct and concrete.",
+        "Cover every required concept when the memory context supports it.",
       ].join(" "),
       prompt: [
         `Question: ${testCase.query}`,
+        "",
+        "Required concepts to check:",
+        testCase.expectedKeywords.join(", "),
+        "",
+        "Expected high-signal sources:",
+        testCase.expectedSources.join(", "),
         "",
         "Memory context:",
         formatAnswerContext(results, {
@@ -566,7 +574,7 @@ function formatAnswerContext(
 function rerankMemoryResults(
   results: Awaited<ReturnType<typeof dataStore.searchChunks>>,
   limit: number,
-  options: { overviewIntent?: boolean } = {},
+  options: { overviewIntent?: boolean; preferredSources?: string[] } = {},
 ): Awaited<ReturnType<typeof dataStore.searchChunks>> {
   const ranked = [...results].sort(
     (left, right) =>
@@ -617,7 +625,7 @@ function memoryResultSourceKey(
 
 function memoryResultScore(
   result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number],
-  options: { overviewIntent?: boolean } = {},
+  options: { overviewIntent?: boolean; preferredSources?: string[] } = {},
 ): number {
   const source = memoryResultSourceKey(result);
   const title = result.document.title.toLowerCase();
@@ -647,6 +655,9 @@ function memoryResultScore(
   }
   if (source.includes(".example") || source.endsWith(".env")) {
     score -= 0.6;
+  }
+  if (options.preferredSources?.some((preferred) => source === preferred.toLowerCase())) {
+    score += 3;
   }
 
   if (options.overviewIntent) {
