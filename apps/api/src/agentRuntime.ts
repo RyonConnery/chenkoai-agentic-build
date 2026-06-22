@@ -93,7 +93,11 @@ function summarizeMemoryContext(memoryContext: string): string {
 
   return memoryContext
     .split(/\n\n+/)
-    .map((entry) => entry.split(/\r?\n/)[0]?.trim())
+    .map((entry) => {
+      const [source, ...body] = entry.split(/\r?\n/);
+      const snippet = body.join(" ").replace(/\s+/g, " ").trim().slice(0, 180);
+      return [source?.trim(), snippet].filter(Boolean).join(" - ");
+    })
     .filter((line): line is string => Boolean(line))
     .slice(0, 4)
     .join("\n");

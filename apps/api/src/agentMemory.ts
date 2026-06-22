@@ -36,12 +36,13 @@ export class AgentMemoryRetriever {
 
   async #search(query: string): Promise<string> {
     const embedding = await this.#embeddingProvider.embed(query);
-    const results = await this.#dataStore.searchChunks({
+    const candidates = await this.#dataStore.searchChunks({
       embedding: embedding.embedding,
       embeddingModel: embedding.model,
-      limit: this.#limit,
+      limit: Math.min(40, Math.max(this.#limit * 5, 12)),
     });
 
+    const results = rerankMemoryResults(candidates, this.#limit);
     return formatMemoryResults(results);
   }
 }
@@ -57,16 +58,84 @@ function createPlanningMemoryQuery(snapshot: AgentRunSnapshot): string {
 }
 
 function createMemoryQuery(snapshot: AgentRunSnapshot, step: AgentRunStep): string {
+  const completedStepSummaries = snapshot.run.steps
+    .filter((candidate) => candidate.status === "completed")
+    .map((candidate) => [
+      `Completed step ${candidate.index + 1}: ${candidate.title}`,
+      summarizeStepOutput(candidate.details),
+    ])
+    .flat()
+    .filter(Boolean);
+
   return [
     snapshot.run.goal,
     snapshot.run.context,
-    step.title,
-    ...snapshot.run.steps
-      .filter((candidate) => candidate.status === "completed")
-      .map((candidate) => candidate.details ?? candidate.title),
+    `Current step ${step.index + 1}: ${step.title}`,
+    `Find memory specifically useful for this step, not only general project overview.`,
+    ...completedStepSummaries,
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function summarizeStepOutput(details: string | undefined): string {
+  if (!details) {
+    return "";
+  }
+
+  const output = details.split("Agent output:").at(1) ?? details;
+  return output.replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
+function rerankMemoryResults(results: DataSearchResult[], limit: number): DataSearchResult[] {
+  const ranked = [...results].sort((left, right) => scoreMemoryResult(right) - scoreMemoryResult(left));
+  const selected: DataSearchResult[] = [];
+  const seenSources = new Set<string>();
+
+  for (const result of ranked) {
+    const source = memorySourceKey(result);
+    if (seenSources.has(source)) {
+      continue;
+    }
+
+    selected.push(result);
+    seenSources.add(source);
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected.length > 0 ? selected : ranked.slice(0, limit);
+}
+
+function scoreMemoryResult(result: DataSearchResult): number {
+  const source = memorySourceKey(result);
+  const title = result.document.title.toLowerCase();
+  const metadata = result.chunk.metadata as { kind?: unknown };
+  let score = 1 - result.distance;
+
+  if (metadata.kind === "workspace-overview" || source === "chenkoai://workspace-overview") {
+    score += 1.4;
+  }
+  if (source === "readme.md" || title === "readme.md") {
+    score += 1.0;
+  }
+  if (source.startsWith("docs/")) {
+    score += 1.0;
+  }
+  if (source.includes("agent") || source.includes("tool") || source.includes("memory")) {
+    score += 0.5;
+  }
+  if (source.endsWith("cargo.toml") || source.endsWith("package.json")) {
+    score -= 0.6;
+  }
+
+  return score;
+}
+
+function memorySourceKey(result: DataSearchResult): string {
+  return (result.document.sourceUri ?? result.document.title).replace(/\\/g, "/").toLowerCase();
 }
 
 function formatMemoryResults(results: DataSearchResult[]): string {

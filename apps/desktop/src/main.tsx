@@ -483,7 +483,11 @@ function App() {
                           </strong>
                           <span>{step.status}</span>
                         </div>
-                        {step.details ? <pre>{step.details}</pre> : <p className="muted">Waiting to run.</p>}
+                        {step.details ? (
+                          <StepDetails details={step.details} />
+                        ) : (
+                          <p className="muted">Waiting to run.</p>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -761,6 +765,49 @@ function PermissionCard({
       </div>
     </div>
   );
+}
+
+function StepDetails({ details }: { details: string }) {
+  const parsed = parseStepDetails(details);
+
+  return (
+    <div className="step-details">
+      {parsed.memory.length > 0 ? (
+        <section>
+          <h4>Memory Used</h4>
+          {parsed.memory.map((line, index) => (
+            <p className="step-memory-line" key={`${index}-${line}`}>
+              {line}
+            </p>
+          ))}
+        </section>
+      ) : null}
+      <section>
+        <h4>Agent Output</h4>
+        <div>{renderMemoryAnswer(parsed.output)}</div>
+      </section>
+    </div>
+  );
+}
+
+function parseStepDetails(details: string): { memory: string[]; output: string } {
+  const [, afterMemory = details] = details.split("Memory used:");
+  const [memoryBlock, outputBlock] = afterMemory.split("Agent output:");
+
+  if (!outputBlock) {
+    return {
+      memory: [],
+      output: details,
+    };
+  }
+
+  return {
+    memory: (memoryBlock ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+    output: outputBlock.trim(),
+  };
 }
 
 function renderMemoryAnswer(answer: string): React.ReactNode[] {

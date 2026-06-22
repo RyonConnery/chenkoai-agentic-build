@@ -416,6 +416,36 @@ textarea {
   text-transform: uppercase;
 }
 
+.step-details {
+  display: grid;
+  gap: 12px;
+}
+
+.step-details section {
+  background: #f7f9fc;
+  border: 1px solid #e2e7f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.step-details h4 {
+  font-size: 13px;
+  margin: 0;
+}
+
+.step-details p {
+  margin: 0;
+}
+
+.step-memory-line {
+  color: #3b465a;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .permission-card {
   border: 1px solid #dce3ee;
   border-radius: 8px;

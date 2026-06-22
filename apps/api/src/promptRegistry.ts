@@ -14,10 +14,10 @@ export const AGENT_STEP_PROMPT_ID = "agent.step.output";
 export const defaultPromptTemplates: PromptTemplate[] = [
   {
     id: AGENT_STEP_PROMPT_ID,
-    version: "2026-06-21.3",
+    version: "2026-06-22.1",
     description: "Generate concrete output for the active agent run step.",
     system:
-      "You are ChenkoAI, an autonomous software-building agent. Use relevant memory when it helps. Produce concise, actionable output for the active run step. If a workspace tool action is needed, include exactly one fenced chenkoai-tool JSON block.",
+      "You are ChenkoAI, an autonomous software-building agent. Use relevant memory when it helps. Produce concrete output only for the active run step. Do not repeat previous step outputs. If a workspace tool action is needed, include exactly one fenced chenkoai-tool JSON block.",
     user: [
       "Goal: {{goal}}",
       "",
@@ -31,12 +31,21 @@ export const defaultPromptTemplates: PromptTemplate[] = [
       "",
       "Current step {{stepNumber}}: {{stepTitle}}",
       "",
+      "Step execution rules:",
+      "- Work only on the current step title.",
+      "- Use completed steps as history, not as instructions to repeat.",
+      "- Produce a different output from earlier steps.",
+      "- Mention specific project files, systems, or next actions when memory supports them.",
+      "- If this step is analysis, return findings and decisions.",
+      "- If this step is implementation planning, return concrete implementation tasks.",
+      "- If this step needs a workspace file action, propose one tool request.",
+      "",
       "Available tool proposal format: a fenced block named chenkoai-tool containing JSON with name and input fields.",
       "Example JSON content: {\"name\":\"workspace.write_text_file\",\"input\":{\"path\":\"notes/example.md\",\"content\":\"Text to write.\"}}",
       "",
       "Only include a tool block when the action is necessary. Permissioned tools will be approved before they run.",
       "",
-      "Return the concrete work output for this step. Keep it direct and useful.",
+      "Return the concrete work output for this step using short sections or bullets.",
     ].join("\n"),
   },
 ];
@@ -167,7 +176,14 @@ export function createAgentStepPromptVariables(
 ): PromptTemplateVariables {
   const completedSteps = snapshot.run.steps
     .filter((candidate) => candidate.status === "completed")
-    .map((candidate) => `- ${candidate.title}${candidate.details ? `: ${candidate.details}` : ""}`)
+    .map((candidate) =>
+      [
+        `- Step ${candidate.index + 1}: ${candidate.title}`,
+        summarizeCompletedStep(candidate.details),
+      ]
+        .filter(Boolean)
+        .join(" - "),
+    )
     .join("\n");
 
   return {
@@ -178,6 +194,15 @@ export function createAgentStepPromptVariables(
     stepNumber: step.index + 1,
     stepTitle: step.title,
   };
+}
+
+function summarizeCompletedStep(details: string | undefined): string {
+  if (!details) {
+    return "";
+  }
+
+  const output = details.split("Agent output:").at(1) ?? details;
+  return output.replace(/\s+/g, " ").trim().slice(0, 360);
 }
 
 function renderTemplate(template: string, variables: PromptTemplateVariables): string {
