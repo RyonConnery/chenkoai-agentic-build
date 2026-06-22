@@ -222,20 +222,23 @@ server.post<{ Body: DataSearchRequest }>("/data/search", async (request) => {
 
 server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
   const searchRequest = normalizeDataSearchRequest(request.body);
+  const finalLimit = searchRequest.limit;
   const embedding = await embeddingProvider.embed(searchRequest.query);
-  const results = await dataStore.searchChunks({
+  const candidates = await dataStore.searchChunks({
     embedding: embedding.embedding,
     embeddingModel: embedding.model,
     datasetId: searchRequest.datasetId,
-    limit: searchRequest.limit,
+    limit: Math.min(50, Math.max(finalLimit * 5, 20)),
   });
+  const results = rerankMemoryResults(candidates, finalLimit);
   const context = formatAnswerContext(results);
   const generated = await modelProvider.generate({
     systemPrompt: [
       "You are ChenkoAI's memory analyst.",
       "Answer using only the provided memory context.",
       "When you use a source, cite it with bracket numbers like [1].",
-      "If the memory context does not contain enough evidence, say what is missing.",
+      "Give a direct, useful answer when the memory context contains project overview or capability details.",
+      "Only say information is missing when the provided context truly lacks it.",
     ].join(" "),
     prompt: [
       `Question: ${searchRequest.query}`,
@@ -455,6 +458,49 @@ function formatAnswerContext(results: Awaited<ReturnType<typeof dataStore.search
         .join("\n"),
     )
     .join("\n\n");
+}
+
+function rerankMemoryResults(
+  results: Awaited<ReturnType<typeof dataStore.searchChunks>>,
+  limit: number,
+): Awaited<ReturnType<typeof dataStore.searchChunks>> {
+  return [...results]
+    .sort((left, right) => memoryResultScore(right) - memoryResultScore(left))
+    .slice(0, limit);
+}
+
+function memoryResultScore(result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number]): number {
+  const source = (result.document.sourceUri ?? result.document.title).replace(/\\/g, "/").toLowerCase();
+  const title = result.document.title.toLowerCase();
+  const metadata = result.chunk.metadata as { kind?: unknown; generated?: unknown };
+  let score = 1 - result.distance;
+
+  if (metadata.kind === "workspace-overview" || source === "chenkoai://workspace-overview") {
+    score += 2.5;
+  }
+  if (title.includes("workspace overview")) {
+    score += 2;
+  }
+  if (source === "readme.md" || title === "readme.md") {
+    score += 1.4;
+  }
+  if (source.startsWith("docs/")) {
+    score += 1.1;
+  }
+  if (source.includes("architecture") || source.includes("roadmap")) {
+    score += 0.8;
+  }
+  if (source.startsWith("apps/api/") || source.startsWith("packages/agent-core/")) {
+    score += 0.4;
+  }
+  if (source.endsWith("cargo.toml") || source.endsWith("__init__.py")) {
+    score -= 0.7;
+  }
+  if (source.includes(".example") || source.endsWith(".env")) {
+    score -= 0.6;
+  }
+
+  return score;
 }
 
 async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
