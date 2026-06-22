@@ -827,7 +827,7 @@ function StepDetails({ details }: { details: string }) {
           <h4>Memory Used</h4>
           {parsed.memory.map((line, index) => (
             <p className="step-memory-line" key={`${index}-${line}`}>
-              {line}
+              {cleanDisplayText(line)}
             </p>
           ))}
         </section>
@@ -841,13 +841,14 @@ function StepDetails({ details }: { details: string }) {
 }
 
 function parseStepDetails(details: string): { memory: string[]; output: string } {
-  const [, afterMemory = details] = details.split("Memory used:");
+  const cleanDetails = removeCodeBlocks(details);
+  const [, afterMemory = cleanDetails] = cleanDetails.split("Memory used:");
   const [memoryBlock, outputBlock] = afterMemory.split("Agent output:");
 
   if (!outputBlock) {
     return {
       memory: [],
-      output: details,
+      output: cleanDetails,
     };
   }
 
@@ -856,12 +857,12 @@ function parseStepDetails(details: string): { memory: string[]; output: string }
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean),
-    output: outputBlock.trim(),
+    output: cleanDisplayText(outputBlock),
   };
 }
 
 function renderMemoryAnswer(answer: string): React.ReactNode[] {
-  return answer
+  return cleanDisplayText(answer)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
@@ -927,12 +928,55 @@ function memorySourceMatch(distance: number): string {
 }
 
 function memorySourceSnippet(content: string): string {
-  const normalized = content.replace(/\s+/g, " ").trim();
+  const normalized = summarizeSourceContent(content);
   if (normalized.length <= 260) {
     return normalized;
   }
 
   return `${normalized.slice(0, 257).trimEnd()}...`;
+}
+
+function summarizeSourceContent(content: string): string {
+  const cleaned = cleanDisplayText(content)
+    .replace(/^#+\s*/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return "Source contains code or configuration details hidden from the answer view.";
+  }
+
+  return cleaned;
+}
+
+function cleanDisplayText(text: string): string {
+  return removeCodeBlocks(text)
+    .replace(/`([^`]+)`/g, "$1")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => !looksLikeCodeLine(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function removeCodeBlocks(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, "").trim();
+}
+
+function looksLikeCodeLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return [
+    /^[{}[\],]+$/,
+    /^"[^"]+"\s*:/,
+    /^(const|let|var|function|import|export|type|interface|class)\s/,
+    /^<\/?[A-Za-z][^>]*>$/,
+    /^[A-Za-z0-9_.-]+\s*=\s*.+$/,
+  ].some((pattern) => pattern.test(trimmed));
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
