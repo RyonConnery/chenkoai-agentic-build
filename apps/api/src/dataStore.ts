@@ -17,12 +17,41 @@ export type DataDocumentListItem = Pick<
   chunkCount: number;
 };
 
+export type DataDatasetQuality = Pick<DataDataset, "id" | "name" | "updatedAt"> & {
+  documentCount: number;
+  chunkCount: number;
+  embeddedChunkCount: number;
+  unembeddedChunkCount: number;
+  duplicateDocumentCount: number;
+};
+
+export type DataQualitySummary = {
+  datasets: DataDatasetQuality[];
+  totals: {
+    datasetCount: number;
+    documentCount: number;
+    chunkCount: number;
+    embeddedChunkCount: number;
+    unembeddedChunkCount: number;
+    duplicateDocumentCount: number;
+  };
+};
+
+export type DataDatasetDeleteResult = {
+  deleted: boolean;
+  datasetName: string;
+  documentCount: number;
+  chunkCount: number;
+};
+
 export interface DataStore {
   ingestText(input: TextIngestRequest): Promise<TextIngestResult>;
   listDatasets(): Promise<DataDataset[]>;
   listDocuments(datasetId?: string): Promise<DataDocumentListItem[]>;
   getDocument(id: string): Promise<DataDocument | undefined>;
   listChunks(documentId: string): Promise<DataChunk[]>;
+  getQualitySummary(): Promise<DataQualitySummary>;
+  deleteDatasetByName(datasetName: string): Promise<DataDatasetDeleteResult>;
   listChunksNeedingEmbedding(limit: number, datasetId?: string): Promise<DataChunk[]>;
   saveChunkEmbedding(chunkId: string, embedding: number[], model: string): Promise<void>;
   searchChunks(input: {
@@ -43,6 +72,16 @@ export class InMemoryDataStore implements DataStore {
     const request = normalizeTextIngestRequest(input);
     const now = new Date().toISOString();
     const dataset = this.#getOrCreateDataset(request.datasetName, now);
+    const contentHash = hashText(request.text);
+    const existing = this.#findExistingDocument(dataset.id, request.sourceUri ?? request.title, contentHash);
+    if (existing) {
+      return {
+        dataset,
+        document: existing,
+        chunks: this.#chunksByDocument.get(existing.id) ?? [],
+      };
+    }
+
     const document: DataDocument = {
       id: crypto.randomUUID(),
       datasetId: dataset.id,
@@ -50,7 +89,7 @@ export class InMemoryDataStore implements DataStore {
       sourceType: request.sourceType,
       sourceUri: request.sourceUri,
       metadata: request.metadata,
-      contentHash: hashText(request.text),
+      contentHash,
       createdAt: now,
       updatedAt: now,
     };
@@ -92,6 +131,59 @@ export class InMemoryDataStore implements DataStore {
 
   async listChunks(documentId: string): Promise<DataChunk[]> {
     return this.#chunksByDocument.get(documentId) ?? [];
+  }
+
+  async getQualitySummary(): Promise<DataQualitySummary> {
+    const datasets = [...this.#datasetsByName.values()].map((dataset) => {
+      const documents = [...this.#documents.values()].filter(
+        (document) => document.datasetId === dataset.id,
+      );
+      const chunks = documents.flatMap((document) => this.#chunksByDocument.get(document.id) ?? []);
+      const duplicateDocumentCount = countDuplicateDocuments(documents);
+
+      return {
+        id: dataset.id,
+        name: dataset.name,
+        updatedAt: dataset.updatedAt,
+        documentCount: documents.length,
+        chunkCount: chunks.length,
+        embeddedChunkCount: chunks.filter((chunk) => this.#embeddingsByChunk.has(chunk.id)).length,
+        unembeddedChunkCount: chunks.filter((chunk) => !this.#embeddingsByChunk.has(chunk.id)).length,
+        duplicateDocumentCount,
+      };
+    });
+
+    return summarizeQuality(datasets);
+  }
+
+  async deleteDatasetByName(datasetName: string): Promise<DataDatasetDeleteResult> {
+    const dataset = this.#datasetsByName.get(datasetName);
+    if (!dataset) {
+      return { deleted: false, datasetName, documentCount: 0, chunkCount: 0 };
+    }
+
+    const documents = [...this.#documents.values()].filter(
+      (document) => document.datasetId === dataset.id,
+    );
+    const chunkIds = documents.flatMap((document) =>
+      (this.#chunksByDocument.get(document.id) ?? []).map((chunk) => chunk.id),
+    );
+
+    for (const document of documents) {
+      this.#documents.delete(document.id);
+      this.#chunksByDocument.delete(document.id);
+    }
+    for (const chunkId of chunkIds) {
+      this.#embeddingsByChunk.delete(chunkId);
+    }
+    this.#datasetsByName.delete(datasetName);
+
+    return {
+      deleted: true,
+      datasetName,
+      documentCount: documents.length,
+      chunkCount: chunkIds.length,
+    };
   }
 
   async listChunksNeedingEmbedding(limit: number, datasetId?: string): Promise<DataChunk[]> {
@@ -179,6 +271,19 @@ export class InMemoryDataStore implements DataStore {
     return [...this.#datasetsByName.values()].find((dataset) => dataset.id === id);
   }
 
+  #findExistingDocument(
+    datasetId: string,
+    sourceKey: string,
+    contentHash: string,
+  ): DataDocument | undefined {
+    return [...this.#documents.values()].find(
+      (document) =>
+        document.datasetId === datasetId &&
+        (document.sourceUri ?? document.title) === sourceKey &&
+        document.contentHash === contentHash,
+    );
+  }
+
   #allChunks(): DataChunk[] {
     return [...this.#chunksByDocument.values()].flat();
   }
@@ -205,6 +310,40 @@ export function createChunks(
 
 export function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
+}
+
+export function summarizeQuality(datasets: DataDatasetQuality[]): DataQualitySummary {
+  return {
+    datasets: datasets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    totals: {
+      datasetCount: datasets.length,
+      documentCount: sumBy(datasets, "documentCount"),
+      chunkCount: sumBy(datasets, "chunkCount"),
+      embeddedChunkCount: sumBy(datasets, "embeddedChunkCount"),
+      unembeddedChunkCount: sumBy(datasets, "unembeddedChunkCount"),
+      duplicateDocumentCount: sumBy(datasets, "duplicateDocumentCount"),
+    },
+  };
+}
+
+function countDuplicateDocuments(documents: DataDocument[]): number {
+  const counts = new Map<string, number>();
+  for (const document of documents) {
+    const key = `${document.sourceUri ?? document.title}\u0000${document.contentHash}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.values()].reduce((total, count) => total + Math.max(0, count - 1), 0);
+}
+
+function sumBy(
+  datasets: DataDatasetQuality[],
+  key: keyof Pick<
+    DataDatasetQuality,
+    "documentCount" | "chunkCount" | "embeddedChunkCount" | "unembeddedChunkCount" | "duplicateDocumentCount"
+  >,
+): number {
+  return datasets.reduce((total, dataset) => total + dataset[key], 0);
 }
 
 function cosineDistance(left: number[], right: number[]): number {

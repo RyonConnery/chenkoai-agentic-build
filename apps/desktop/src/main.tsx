@@ -58,10 +58,32 @@ type DataDataset = {
 
 type DataDocument = {
   id: string;
+  datasetId: string;
   title: string;
   sourceType: string;
   sourceUri?: string;
   chunkCount: number;
+};
+
+type DataQualitySummary = {
+  datasets: {
+    id: string;
+    name: string;
+    updatedAt: string;
+    documentCount: number;
+    chunkCount: number;
+    embeddedChunkCount: number;
+    unembeddedChunkCount: number;
+    duplicateDocumentCount: number;
+  }[];
+  totals: {
+    datasetCount: number;
+    documentCount: number;
+    chunkCount: number;
+    embeddedChunkCount: number;
+    unembeddedChunkCount: number;
+    duplicateDocumentCount: number;
+  };
 };
 
 type DataSearchResult = {
@@ -124,10 +146,13 @@ type SystemProfile = {
 type SystemScanResult = {
   datasetName: string;
   workspaceRoot: string;
+  mode: "append" | "replace";
   scannedFiles: number;
   ingestedDocuments: number;
   skippedFiles: number;
   embeddedChunks: number;
+  replacedDocuments: number;
+  replacedChunks: number;
   truncated: boolean;
 };
 
@@ -170,6 +195,7 @@ function App() {
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [datasets, setDatasets] = useState<DataDataset[]>([]);
   const [documents, setDocuments] = useState<DataDocument[]>([]);
+  const [dataQuality, setDataQuality] = useState<DataQualitySummary | undefined>();
   const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
   const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
   const [memoryQuestion, setMemoryQuestion] = useState("What does this workspace contain?");
@@ -205,6 +231,7 @@ function App() {
         permissionPayload,
         datasetPayload,
         documentPayload,
+        qualityPayload,
       ] = await Promise.all([
         apiGet<{ ok: boolean }>("/health"),
         apiGet<{ provider: string }>("/model/provider"),
@@ -215,6 +242,7 @@ function App() {
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
         apiGet<{ datasets: DataDataset[] }>("/data/datasets"),
         apiGet<{ documents: DataDocument[] }>("/data/documents"),
+        apiGet<DataQualitySummary>("/data/quality"),
       ]);
 
       if (!health.ok) {
@@ -232,6 +260,7 @@ function App() {
       setPermissions(permissionPayload.permissions);
       setDatasets(datasetPayload.datasets);
       setDocuments(documentPayload.documents);
+      setDataQuality(qualityPayload);
 
       const runId = nextRunId || runPayload.runs[0]?.id || "";
       setSelectedRunId(runId);
@@ -241,6 +270,7 @@ function App() {
       setModelProvider("unknown");
       setModelSettings(undefined);
       setStorageSettings(undefined);
+      setDataQuality(undefined);
       setSystemProfile(undefined);
       setReport(undefined);
     }
@@ -263,6 +293,24 @@ function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function runSystemScan(mode: "append" | "replace"): Promise<void> {
+    await runAction(async () => {
+      const result = await apiPost<SystemScanResult>("/system/scan", {
+        mode,
+        maxFiles: 1500,
+        maxFileBytes: 160000,
+      });
+      setScanResult(result);
+      setMemoryEvaluation(undefined);
+      setMessage(
+        mode === "replace"
+          ? `Rebuilt memory dataset with ${result.ingestedDocuments} documents and ${result.embeddedChunks} chunks.`
+          : `System scan checked ${result.scannedFiles} files and embedded ${result.embeddedChunks} chunks.`,
+      );
+      return selectedRunId || undefined;
+    });
   }
 
   return (
@@ -294,27 +342,30 @@ function App() {
               </button>
             </div>
             <p className="muted">{systemProfile?.workspaceRoot ?? "Workspace unavailable."}</p>
-            <button
-              disabled={busy || apiState !== "online"}
-              onClick={() =>
-                void runAction(async () => {
-                  const result = await apiPost<SystemScanResult>("/system/scan", {
-                    maxFiles: 120,
-                    maxFileBytes: 160000,
-                  });
-                  setScanResult(result);
-                  setMessage(
-                    `System scan ingested ${result.ingestedDocuments} documents and embedded ${result.embeddedChunks} chunks.`,
-                  );
-                  return selectedRunId || undefined;
-                })
-              }
-            >
-              Scan Workspace
-            </button>
+            <div className="button-row">
+              <button
+                disabled={busy || apiState !== "online"}
+                onClick={() => void runSystemScan("append")}
+              >
+                Scan Workspace
+              </button>
+              <button
+                className="secondary"
+                disabled={busy || apiState !== "online"}
+                onClick={() => void runSystemScan("replace")}
+              >
+                Replace & Rescan
+              </button>
+            </div>
             <div className="memory-summary">
-              <Metric label="Datasets" value={String(datasets.length)} />
-              <Metric label="Documents" value={String(documents.length)} />
+              <Metric label="Datasets" value={String(dataQuality?.totals.datasetCount ?? datasets.length)} />
+              <Metric label="Documents" value={String(dataQuality?.totals.documentCount ?? documents.length)} />
+              <Metric label="Chunks" value={String(dataQuality?.totals.chunkCount ?? 0)} />
+              <Metric label="Embedded" value={String(dataQuality?.totals.embeddedChunkCount ?? 0)} />
+              <Metric
+                label="Duplicates"
+                value={String(dataQuality?.totals.duplicateDocumentCount ?? 0)}
+              />
               <Metric
                 label="Eval Score"
                 value={memoryEvaluation ? `${memoryEvaluation.summary.percent}%` : "Not run"}
@@ -322,8 +373,28 @@ function App() {
             </div>
             {scanResult ? (
               <p className="muted">
-                Last scan: {scanResult.scannedFiles} files checked, {scanResult.skippedFiles} skipped.
+                Last scan: {scanResult.mode} mode, {scanResult.scannedFiles} files checked,{" "}
+                {scanResult.ingestedDocuments} documents ingested, {scanResult.embeddedChunks} chunks embedded,{" "}
+                {scanResult.skippedFiles} skipped.
+                {scanResult.mode === "replace"
+                  ? ` Replaced ${scanResult.replacedDocuments} old documents and ${scanResult.replacedChunks} old chunks.`
+                  : ""}
               </p>
+            ) : null}
+            {dataQuality ? (
+              <section className="quality-panel">
+                <h3>Dataset Quality</h3>
+                {dataQuality.datasets.slice(0, 4).map((dataset) => (
+                  <div className="quality-row" key={dataset.id}>
+                    <strong>{dataset.name}</strong>
+                    <span>
+                      {dataset.documentCount} docs | {dataset.chunkCount} chunks |{" "}
+                      {dataset.unembeddedChunkCount} unembedded |{" "}
+                      {dataset.duplicateDocumentCount} duplicates
+                    </span>
+                  </div>
+                ))}
+              </section>
             ) : null}
 
             <div className="section-heading compact-heading">

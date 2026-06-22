@@ -11,7 +11,11 @@ import type { Pool, PoolClient, QueryResultRow } from "pg";
 import {
   createChunks,
   hashText,
+  summarizeQuality,
+  type DataDatasetDeleteResult,
+  type DataDatasetQuality,
   type DataDocumentListItem,
+  type DataQualitySummary,
   type DataStore,
 } from "./dataStore.js";
 
@@ -70,6 +74,21 @@ export class PostgresDataStore implements DataStore {
 
     return this.#withTransaction(async (client) => {
       const dataset = await this.#getOrCreateDataset(client, request.datasetName, now);
+      const contentHash = hashText(request.text);
+      const existing = await this.#findExistingDocument(
+        client,
+        dataset.id,
+        request.sourceUri ?? request.title,
+        contentHash,
+      );
+      if (existing) {
+        return {
+          dataset,
+          document: existing,
+          chunks: await this.#listChunks(client, existing.id),
+        };
+      }
+
       const document: DataDocument = {
         id: crypto.randomUUID(),
         datasetId: dataset.id,
@@ -77,7 +96,7 @@ export class PostgresDataStore implements DataStore {
         sourceType: request.sourceType,
         sourceUri: request.sourceUri,
         metadata: request.metadata,
-        contentHash: hashText(request.text),
+        contentHash,
         createdAt: now,
         updatedAt: now,
       };
@@ -174,7 +193,110 @@ export class PostgresDataStore implements DataStore {
   }
 
   async listChunks(documentId: string): Promise<DataChunk[]> {
-    const result = await this.#pool.query<ChunkRow>(
+    return await this.#listChunks(this.#pool, documentId);
+  }
+
+  async getQualitySummary(): Promise<DataQualitySummary> {
+    const result = await this.#pool.query<
+      QueryResultRow & {
+        id: string;
+        name: string;
+        updated_at: Date;
+        document_count: string;
+        chunk_count: string;
+        embedded_chunk_count: string;
+        duplicate_document_count: string | null;
+      }
+    >(
+      `select ds.id,
+              ds.name,
+              ds.updated_at,
+              coalesce(doc.document_count, 0)::text as document_count,
+              coalesce(chunks.chunk_count, 0)::text as chunk_count,
+              coalesce(chunks.embedded_chunk_count, 0)::text as embedded_chunk_count,
+              coalesce(dup.duplicate_document_count, 0)::text as duplicate_document_count
+       from data_datasets ds
+       left join (
+         select dataset_id, count(*) as document_count
+         from data_documents
+         group by dataset_id
+       ) doc on doc.dataset_id = ds.id
+       left join (
+         select dataset_id,
+                count(*) as chunk_count,
+                count(*) filter (where embedding is not null) as embedded_chunk_count
+         from data_chunks
+         group by dataset_id
+       ) chunks on chunks.dataset_id = ds.id
+       left join (
+         select dataset_id, sum(document_count - 1)::text as duplicate_document_count
+         from (
+           select dataset_id, coalesce(source_uri, title), content_hash, count(*) as document_count
+           from data_documents
+           group by dataset_id, coalesce(source_uri, title), content_hash
+           having count(*) > 1
+         ) grouped_duplicates
+         group by dataset_id
+       ) dup on dup.dataset_id = ds.id
+       order by ds.updated_at desc`,
+    );
+
+    const datasets: DataDatasetQuality[] = result.rows.map((row) => {
+      const chunkCount = Number(row.chunk_count);
+      const embeddedChunkCount = Number(row.embedded_chunk_count);
+
+      return {
+        id: row.id,
+        name: row.name,
+        updatedAt: toIso(row.updated_at),
+        documentCount: Number(row.document_count),
+        chunkCount,
+        embeddedChunkCount,
+        unembeddedChunkCount: Math.max(0, chunkCount - embeddedChunkCount),
+        duplicateDocumentCount: Number(row.duplicate_document_count ?? 0),
+      };
+    });
+
+    return summarizeQuality(datasets);
+  }
+
+  async deleteDatasetByName(datasetName: string): Promise<DataDatasetDeleteResult> {
+    return await this.#withTransaction(async (client) => {
+      const datasetResult = await client.query<DatasetRow>(
+        `select id, name, description, created_at, updated_at
+         from data_datasets
+         where name = $1`,
+        [datasetName],
+      );
+      const dataset = datasetResult.rows[0];
+      if (!dataset) {
+        return { deleted: false, datasetName, documentCount: 0, chunkCount: 0 };
+      }
+
+      const countResult = await client.query<
+        QueryResultRow & { document_count: string; chunk_count: string }
+      >(
+        `select count(distinct d.id)::text as document_count,
+                count(c.id)::text as chunk_count
+         from data_documents d
+         left join data_chunks c on c.document_id = d.id
+         where d.dataset_id = $1`,
+        [dataset.id],
+      );
+
+      await client.query(`delete from data_datasets where id = $1`, [dataset.id]);
+
+      return {
+        deleted: true,
+        datasetName,
+        documentCount: Number(countResult.rows[0]?.document_count ?? 0),
+        chunkCount: Number(countResult.rows[0]?.chunk_count ?? 0),
+      };
+    });
+  }
+
+  async #listChunks(client: Pool | PoolClient, documentId: string): Promise<DataChunk[]> {
+    const result = await client.query<ChunkRow>(
       `select id, document_id, dataset_id, chunk_index, content, token_estimate,
               metadata, created_at, embedding_model, embedded_at
        from data_chunks
@@ -279,6 +401,27 @@ export class PostgresDataStore implements DataStore {
     );
 
     return mapDataset(result.rows[0]!);
+  }
+
+  async #findExistingDocument(
+    client: PoolClient,
+    datasetId: string,
+    sourceKey: string,
+    contentHash: string,
+  ): Promise<DataDocument | undefined> {
+    const result = await client.query<DocumentRow>(
+      `select id, dataset_id, title, source_type, source_uri, metadata, content_hash, created_at, updated_at
+       from data_documents
+       where dataset_id = $1
+         and coalesce(source_uri, title) = $2
+         and content_hash = $3
+       order by created_at desc
+       limit 1`,
+      [datasetId, sourceKey, contentHash],
+    );
+
+    const row = result.rows[0];
+    return row ? mapDocument(row) : undefined;
   }
 
   async #withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {

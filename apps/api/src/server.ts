@@ -130,7 +130,7 @@ server.post<{ Body: StorageSettingsMutation }>("/settings/storage", async (reque
 
 server.get("/system/profile", async () => systemScanner.profile());
 
-server.post<{ Body: { maxFiles?: number; maxFileBytes?: number } }>(
+server.post<{ Body: { maxFiles?: number; maxFileBytes?: number; mode?: "append" | "replace" } }>(
   "/system/scan",
   async (request, reply) => {
     const result = await systemScanner.scan(request.body ?? {});
@@ -178,6 +178,8 @@ server.get("/data/datasets", async () => ({
 server.get<{ Querystring: { datasetId?: string } }>("/data/documents", async (request) => ({
   documents: await dataStore.listDocuments(request.query.datasetId),
 }));
+
+server.get("/data/quality", async () => dataStore.getQualitySummary());
 
 server.get<{ Params: { id: string } }>("/data/documents/:id", async (request, reply) => {
   const document = await dataStore.getDocument(request.params.id);

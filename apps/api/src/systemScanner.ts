@@ -52,13 +52,18 @@ const overviewFileCandidates = [
   "infra\\docker-compose.yml",
 ];
 
+const systemDatasetName = "chenkoai-system-scan";
+
 export type SystemScanResult = {
   datasetName: string;
   workspaceRoot: string;
+  mode: "append" | "replace";
   scannedFiles: number;
   ingestedDocuments: number;
   skippedFiles: number;
   embeddedChunks: number;
+  replacedDocuments: number;
+  replacedChunks: number;
   truncated: boolean;
 };
 
@@ -80,23 +85,30 @@ export class SystemScanner {
   profile(): { workspaceRoot: string; datasetName: string } {
     return {
       workspaceRoot: this.#workspaceRoot,
-      datasetName: "chenkoai-system-scan",
+      datasetName: systemDatasetName,
     };
   }
 
-  async scan(input: { maxFiles?: number; maxFileBytes?: number } = {}): Promise<SystemScanResult> {
-    const maxFiles = clamp(input.maxFiles ?? 80, 1, 500);
+  async scan(
+    input: { maxFiles?: number; maxFileBytes?: number; mode?: "append" | "replace" } = {},
+  ): Promise<SystemScanResult> {
+    const mode = input.mode === "replace" ? "replace" : "append";
+    const maxFiles = clamp(input.maxFiles ?? 1_500, 1, 2_500);
     const maxFileBytes = clamp(input.maxFileBytes ?? 120_000, 1_000, 1_000_000);
-    const files = (await this.#collectFiles(".", Math.min(maxFiles * 4, 2_000)))
+    const files = (await this.#collectFiles(".", Math.min(maxFiles * 4, 10_000)))
       .sort(compareFilePriority)
       .slice(0, maxFiles);
     let ingestedDocuments = 0;
     let skippedFiles = 0;
+    const replaced =
+      mode === "replace"
+        ? await this.#dataStore.deleteDatasetByName(systemDatasetName)
+        : { documentCount: 0, chunkCount: 0 };
 
     const overview = await this.#createWorkspaceOverview();
     if (overview) {
       await this.#dataStore.ingestText({
-        datasetName: "chenkoai-system-scan",
+        datasetName: systemDatasetName,
         title: "ChenkoAI Workspace Overview",
         sourceType: "manual",
         sourceUri: "chenkoai://workspace-overview",
@@ -120,7 +132,7 @@ export class SystemScanner {
 
       const text = await fs.readFile(absolutePath, "utf8");
       await this.#dataStore.ingestText({
-        datasetName: "chenkoai-system-scan",
+        datasetName: systemDatasetName,
         title: file,
         sourceType: "file",
         sourceUri: file,
@@ -135,7 +147,7 @@ export class SystemScanner {
     }
 
     const datasets = await this.#dataStore.listDatasets();
-    const datasetId = datasets.find((dataset) => dataset.name === "chenkoai-system-scan")?.id;
+    const datasetId = datasets.find((dataset) => dataset.name === systemDatasetName)?.id;
     let embeddedChunks = 0;
 
     for (;;) {
@@ -152,12 +164,15 @@ export class SystemScanner {
     }
 
     return {
-      datasetName: "chenkoai-system-scan",
+      datasetName: systemDatasetName,
       workspaceRoot: this.#workspaceRoot,
+      mode,
       scannedFiles: files.length,
       ingestedDocuments,
       skippedFiles,
       embeddedChunks,
+      replacedDocuments: replaced.documentCount,
+      replacedChunks: replaced.chunkCount,
       truncated: files.length >= maxFiles,
     };
   }
