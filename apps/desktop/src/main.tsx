@@ -231,7 +231,6 @@ function App() {
         permissionPayload,
         datasetPayload,
         documentPayload,
-        qualityPayload,
       ] = await Promise.all([
         apiGet<{ ok: boolean }>("/health"),
         apiGet<{ provider: string }>("/model/provider"),
@@ -242,7 +241,6 @@ function App() {
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
         apiGet<{ datasets: DataDataset[] }>("/data/datasets"),
         apiGet<{ documents: DataDocument[] }>("/data/documents"),
-        apiGet<DataQualitySummary>("/data/quality"),
       ]);
 
       if (!health.ok) {
@@ -260,7 +258,7 @@ function App() {
       setPermissions(permissionPayload.permissions);
       setDatasets(datasetPayload.datasets);
       setDocuments(documentPayload.documents);
-      setDataQuality(qualityPayload);
+      setDataQuality(await apiGet<DataQualitySummary>("/data/quality").catch(() => undefined));
 
       const runId = nextRunId || runPayload.runs[0]?.id || "";
       setSelectedRunId(runId);

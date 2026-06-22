@@ -229,7 +229,7 @@ export class PostgresDataStore implements DataStore {
          group by dataset_id
        ) chunks on chunks.dataset_id = ds.id
        left join (
-         select dataset_id, sum(document_count - 1)::text as duplicate_document_count
+         select dataset_id, sum(document_count - 1) as duplicate_document_count
          from (
            select dataset_id, coalesce(source_uri, title), content_hash, count(*) as document_count
            from data_documents
