@@ -464,13 +464,54 @@ function rerankMemoryResults(
   results: Awaited<ReturnType<typeof dataStore.searchChunks>>,
   limit: number,
 ): Awaited<ReturnType<typeof dataStore.searchChunks>> {
-  return [...results]
-    .sort((left, right) => memoryResultScore(right) - memoryResultScore(left))
-    .slice(0, limit);
+  const ranked = [...results].sort(
+    (left, right) => memoryResultScore(right) - memoryResultScore(left),
+  );
+  const selected: typeof ranked = [];
+  const seenSources = new Set<string>();
+  const seenChunks = new Set<string>();
+
+  for (const result of ranked) {
+    const sourceKey = memoryResultSourceKey(result);
+    if (seenSources.has(sourceKey)) {
+      continue;
+    }
+
+    selected.push(result);
+    seenSources.add(sourceKey);
+    seenChunks.add(result.chunk.id);
+
+    if (selected.length >= limit) {
+      return selected;
+    }
+  }
+
+  for (const result of ranked) {
+    if (seenChunks.has(result.chunk.id)) {
+      continue;
+    }
+
+    selected.push(result);
+    seenChunks.add(result.chunk.id);
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function memoryResultSourceKey(
+  result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number],
+): string {
+  return (result.document.sourceUri ?? result.document.title)
+    .replace(/\\/g, "/")
+    .toLowerCase();
 }
 
 function memoryResultScore(result: Awaited<ReturnType<typeof dataStore.searchChunks>>[number]): number {
-  const source = (result.document.sourceUri ?? result.document.title).replace(/\\/g, "/").toLowerCase();
+  const source = memoryResultSourceKey(result);
   const title = result.document.title.toLowerCase();
   const metadata = result.chunk.metadata as { kind?: unknown; generated?: unknown };
   let score = 1 - result.distance;

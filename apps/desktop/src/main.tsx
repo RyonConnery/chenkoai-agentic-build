@@ -318,17 +318,23 @@ function App() {
                 <p className="muted">
                   Model: {memoryAnswer.model} | Embeddings: {memoryAnswer.embeddingModel}
                 </p>
-                {memoryAnswer.results.map((result, index) => (
-                  <div className="memory-source" key={result.chunk.id}>
-                    <strong>
-                      [{index + 1}] {result.document.title}
-                    </strong>
-                    <span>
-                      {result.dataset.name} | distance {result.distance.toFixed(4)}
-                    </span>
-                    <p>{result.chunk.content}</p>
-                  </div>
-                ))}
+                <h3>Sources Used</h3>
+                <div className="memory-source-list">
+                  {memorySources(memoryAnswer).map((result, index) => (
+                    <article className="memory-source" key={result.chunk.id}>
+                      <div className="memory-source-header">
+                        <strong>
+                          [{index + 1}] {memorySourceTitle(result)}
+                        </strong>
+                        <span>{memorySourceMatch(result.distance)}</span>
+                      </div>
+                      <p className="memory-source-meta">
+                        {result.dataset.name} | {result.document.sourceType}
+                      </p>
+                      <p>{memorySourceSnippet(result.chunk.content)}</p>
+                    </article>
+                  ))}
+                </div>
               </section>
             ) : null}
 
@@ -754,6 +760,41 @@ async function readResponse<T>(response: Response): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+function memorySources(answer: MemoryAnswer): DataSearchResult[] {
+  const seen = new Set<string>();
+  const sources: DataSearchResult[] = [];
+
+  for (const result of answer.results) {
+    const key = (result.document.sourceUri || result.document.title).toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    sources.push(result);
+  }
+
+  return sources.slice(0, 5);
+}
+
+function memorySourceTitle(result: DataSearchResult): string {
+  return result.document.sourceUri || result.document.title;
+}
+
+function memorySourceMatch(distance: number): string {
+  const match = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+  return `${match}% match`;
+}
+
+function memorySourceSnippet(content: string): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 260) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 257).trimEnd()}...`;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
