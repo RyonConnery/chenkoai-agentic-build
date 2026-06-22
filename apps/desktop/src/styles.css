@@ -256,6 +256,11 @@ textarea {
   margin-bottom: 10px;
 }
 
+.memory-answer-text {
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .memory-source-list {
   display: grid;
   gap: 8px;

@@ -314,7 +314,7 @@ function App() {
             </button>
             {memoryAnswer ? (
               <section className="memory-answer">
-                <p>{memoryAnswer.answer}</p>
+                <p className="memory-answer-text">{memoryAnswer.answer}</p>
                 <p className="muted">
                   Model: {memoryAnswer.model} | Embeddings: {memoryAnswer.embeddingModel}
                 </p>

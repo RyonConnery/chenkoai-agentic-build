@@ -245,6 +245,15 @@ server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
 
   const results = rerankMemoryResults(candidates, finalLimit, { overviewIntent });
   const context = formatAnswerContext(results, { overviewIntent });
+  const answerFormat = overviewIntent
+    ? [
+        "Answer format:",
+        "Use short sections with these exact headings: Components, Working Now, Important Missing Production Work.",
+        "Use dash bullets under each heading.",
+        "Keep each bullet one sentence.",
+        "Do not write numbered items inline in a paragraph.",
+      ].join("\n")
+    : "Answer format: Use concise paragraphs or bullets, whichever is clearest.";
   const generated = await modelProvider.generate({
     systemPrompt: [
       "You are ChenkoAI's memory analyst.",
@@ -256,6 +265,8 @@ server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
     ].join(" "),
     prompt: [
       `Question: ${searchRequest.query}`,
+      "",
+      answerFormat,
       "",
       "Memory context:",
       context || "No matching memory chunks were found.",
