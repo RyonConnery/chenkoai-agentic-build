@@ -16,6 +16,7 @@ export class AgentRuntime {
   readonly #promptRegistry: PromptRegistry;
   readonly #memoryRetriever?: AgentMemoryRetriever;
   readonly #toolExecutor?: AgentToolExecutor;
+  readonly #runtimeStatusProvider?: () => Promise<string>;
 
   constructor(
     store: AgentRunStore,
@@ -23,12 +24,14 @@ export class AgentRuntime {
     promptRegistry: PromptRegistry,
     memoryRetriever?: AgentMemoryRetriever,
     toolExecutor?: AgentToolExecutor,
+    runtimeStatusProvider?: () => Promise<string>,
   ) {
     this.#store = store;
     this.#modelProvider = modelProvider;
     this.#promptRegistry = promptRegistry;
     this.#memoryRetriever = memoryRetriever;
     this.#toolExecutor = toolExecutor;
+    this.#runtimeStatusProvider = runtimeStatusProvider;
   }
 
   async advance(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -46,11 +49,15 @@ export class AgentRuntime {
     const memoryContext = this.#memoryRetriever
       ? await this.#memoryRetriever.retrieve(advanced, startedStep)
       : "None";
+    const runtimeStatus = this.#runtimeStatusProvider
+      ? await this.#runtimeStatusProvider()
+      : "Runtime status unavailable.";
     const prompt = await this.#promptRegistry.render(
       AGENT_STEP_PROMPT_ID,
       {
         ...createAgentStepPromptVariables(advanced, startedStep),
         memoryContext,
+        runtimeStatus,
       },
     );
 

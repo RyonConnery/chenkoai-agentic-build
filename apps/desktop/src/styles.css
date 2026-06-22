@@ -242,7 +242,7 @@ textarea {
 .memory-summary {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 12px 0;
 }
 
@@ -402,6 +402,21 @@ textarea {
   border-bottom: 1px solid #edf1f7;
   margin-bottom: 18px;
   padding-bottom: 18px;
+}
+
+.storage-status {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.warning {
+  background: #fff8f1;
+  border: 1px solid #f3d5b8;
+  border-radius: 6px;
+  color: #8a4b00;
+  padding: 10px 12px;
 }
 
 .metric {

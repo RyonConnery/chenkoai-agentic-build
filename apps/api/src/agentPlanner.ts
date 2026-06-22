@@ -7,15 +7,18 @@ export class AgentPlanner {
   readonly #store: AgentRunStore;
   readonly #modelProvider: ModelProviderAdapter;
   readonly #memoryRetriever?: AgentMemoryRetriever;
+  readonly #runtimeStatusProvider?: () => Promise<string>;
 
   constructor(
     store: AgentRunStore,
     modelProvider: ModelProviderAdapter,
     memoryRetriever?: AgentMemoryRetriever,
+    runtimeStatusProvider?: () => Promise<string>,
   ) {
     this.#store = store;
     this.#modelProvider = modelProvider;
     this.#memoryRetriever = memoryRetriever;
+    this.#runtimeStatusProvider = runtimeStatusProvider;
   }
 
   async plan(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -27,13 +30,19 @@ export class AgentPlanner {
     const memoryContext = this.#memoryRetriever
       ? await this.#memoryRetriever.retrieveForPlanning(snapshot)
       : "None";
+    const runtimeStatus = this.#runtimeStatusProvider
+      ? await this.#runtimeStatusProvider()
+      : "Runtime status unavailable.";
     const generated = await this.#modelProvider.generate({
       systemPrompt:
-        "You are ChenkoAI's planner. Use relevant stored memory to make the plan specific to this project. Return only a JSON array of concise step titles.",
+        "You are ChenkoAI's planner. Use relevant stored memory and current runtime status to make the plan specific to this project. Return only a JSON array of concise step titles.",
       prompt: [
         `Goal: ${snapshot.run.goal}`,
         `Context: ${snapshot.run.context ?? "None provided"}`,
         `Maximum steps: ${snapshot.run.maxSteps}`,
+        "",
+        "Current runtime status:",
+        runtimeStatus,
         "",
         "Relevant stored memory:",
         memoryContext,

@@ -23,8 +23,14 @@ export type StorageSettingsResponse = {
   agentRunStore: string;
   promptRegistryStore: string;
   toolPermissionStore: string;
+  activeStorageMode: string;
+  activeDataStore: string;
+  activeAgentRunStore: string;
+  activePromptRegistryStore: string;
+  activeToolPermissionStore: string;
   databaseUrl: string;
   hasDatabaseUrl: boolean;
+  storageDegradedReason?: string;
 };
 
 export type ModelSettingsMutation = {
@@ -80,6 +86,17 @@ export function readStorageSettings(): StorageSettingsResponse {
     toolPermissionStore === "postgres"
       ? "postgres"
       : "memory";
+  const activeDataStore = config.DATA_STORE ?? "memory";
+  const activeAgentRunStore = config.AGENT_RUN_STORE ?? "memory";
+  const activePromptRegistryStore = config.PROMPT_REGISTRY_STORE ?? "memory";
+  const activeToolPermissionStore = config.TOOL_PERMISSION_STORE ?? "memory";
+  const activeStorageMode =
+    activeDataStore === "postgres" &&
+    activeAgentRunStore === "postgres" &&
+    activePromptRegistryStore === "postgres" &&
+    activeToolPermissionStore === "postgres"
+      ? "postgres"
+      : "memory";
 
   return {
     configPath: settingsPath(),
@@ -88,10 +105,16 @@ export function readStorageSettings(): StorageSettingsResponse {
     agentRunStore,
     promptRegistryStore,
     toolPermissionStore,
+    activeStorageMode,
+    activeDataStore,
+    activeAgentRunStore,
+    activePromptRegistryStore,
+    activeToolPermissionStore,
     databaseUrl:
       config.DATABASE_URL ??
       "postgresql://chenkoai:chenkoai_dev_password@localhost:5432/chenkoai",
     hasDatabaseUrl: Boolean(config.DATABASE_URL),
+    storageDegradedReason: config.STORAGE_DEGRADED_REASON,
   };
 }
 
@@ -157,6 +180,7 @@ function readRuntimeSettings(): Record<string, string | undefined> {
     CONFIGURED_PROMPT_REGISTRY_STORE: process.env.CHENKOAI_CONFIGURED_PROMPT_REGISTRY_STORE,
     TOOL_PERMISSION_STORE: process.env.TOOL_PERMISSION_STORE,
     CONFIGURED_TOOL_PERMISSION_STORE: process.env.CHENKOAI_CONFIGURED_TOOL_PERMISSION_STORE,
+    STORAGE_DEGRADED_REASON: process.env.CHENKOAI_STORAGE_DEGRADED_REASON,
     DATABASE_URL: process.env.DATABASE_URL,
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,

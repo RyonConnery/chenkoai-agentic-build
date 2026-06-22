@@ -252,9 +252,11 @@ export class LocalToolRegistry {
     };
   }
 
-  #resolveWorkspacePath(relativePath: string): string {
+  #resolveWorkspacePath(inputPath: string): string {
+    const relativePath = this.#normalizeWorkspacePath(inputPath);
+
     if (path.isAbsolute(relativePath)) {
-      throw new Error("Tool paths must be workspace-relative");
+      throw new Error("Tool paths must be workspace-relative or inside the configured workspace");
     }
 
     const target = path.resolve(this.#workspaceRoot, relativePath);
@@ -264,6 +266,19 @@ export class LocalToolRegistry {
     }
 
     return target;
+  }
+
+  #normalizeWorkspacePath(inputPath: string): string {
+    if (!path.isAbsolute(inputPath)) {
+      return inputPath;
+    }
+
+    const relative = path.relative(this.#workspaceRoot, path.resolve(inputPath));
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      return relative;
+    }
+
+    return inputPath;
   }
 }
 

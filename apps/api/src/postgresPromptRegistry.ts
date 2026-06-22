@@ -31,9 +31,17 @@ export class PostgresPromptRegistry implements PromptRegistry {
   }
 
   async seedDefaults(): Promise<void> {
-    await Promise.all(
-      defaultPromptTemplates.map((template) =>
-        this.#pool.query(
+    const client = await this.#pool.connect();
+    try {
+      await client.query("begin");
+      for (const template of defaultPromptTemplates) {
+        await client.query(
+          `update prompt_templates
+           set active = false, updated_at = now()
+           where id = $1 and version <> $2`,
+          [template.id, template.version],
+        );
+        await client.query(
           `insert into prompt_templates
            (id, version, description, system, user_template, active, created_at, updated_at)
            values ($1, $2, $3, $4, $5, true, now(), now())
@@ -50,9 +58,15 @@ export class PostgresPromptRegistry implements PromptRegistry {
             template.system,
             template.user,
           ],
-        ),
-      ),
-    );
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async list(): Promise<PromptTemplate[]> {

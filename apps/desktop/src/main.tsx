@@ -150,8 +150,14 @@ type StorageSettings = {
   agentRunStore: string;
   promptRegistryStore: string;
   toolPermissionStore: string;
+  activeStorageMode: string;
+  activeDataStore: string;
+  activeAgentRunStore: string;
+  activePromptRegistryStore: string;
+  activeToolPermissionStore: string;
   databaseUrl: string;
   hasDatabaseUrl: boolean;
+  storageDegradedReason?: string;
   configPath: string;
 };
 
@@ -309,6 +315,10 @@ function App() {
             <div className="memory-summary">
               <Metric label="Datasets" value={String(datasets.length)} />
               <Metric label="Documents" value={String(documents.length)} />
+              <Metric
+                label="Eval Score"
+                value={memoryEvaluation ? `${memoryEvaluation.summary.percent}%` : "Not run"}
+              />
             </div>
             {scanResult ? (
               <p className="muted">
@@ -767,6 +777,14 @@ function App() {
                 <p className="muted">
                   PostgreSQL mode stores scans, chunks, agent runs, prompts, and approvals
                   permanently after restart.
+                </p>
+                <div className="storage-status">
+                  <Metric label="Configured" value={storageSettings.storageMode} />
+                  <Metric label="Active" value={storageSettings.activeStorageMode} />
+                </div>
+                <p className={storageSettings.storageDegradedReason ? "warning" : "muted"}>
+                  {storageSettings.storageDegradedReason ??
+                    "PostgreSQL is active when configured and reachable at startup."}
                 </p>
               </div>
             ) : (

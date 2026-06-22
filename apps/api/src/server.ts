@@ -57,7 +57,13 @@ const modelProvider = createDynamicModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
 const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
-const agentPlanner = new AgentPlanner(agentRunStore, modelProvider, agentMemoryRetriever);
+const runtimeStatusProvider = async () => formatRuntimeStatus();
+const agentPlanner = new AgentPlanner(
+  agentRunStore,
+  modelProvider,
+  agentMemoryRetriever,
+  runtimeStatusProvider,
+);
 const agentRunReporter = new AgentRunReporter(agentRunStore, toolPermissions);
 const systemScanner = new SystemScanner({
   dataStore,
@@ -70,6 +76,7 @@ const agentRuntime = new AgentRuntime(
   promptRegistry,
   agentMemoryRetriever,
   agentToolExecutor,
+  runtimeStatusProvider,
 );
 const agentAutoRunner = new AgentAutoRunner(agentRunStore, agentPlanner, agentRuntime);
 
@@ -85,6 +92,12 @@ server.get("/health", async () => ({
   ok: true,
   service: "chenkoai-api",
   storageDegradedReason: process.env.CHENKOAI_STORAGE_DEGRADED_REASON,
+}));
+
+server.get("/system/status", async () => ({
+  runtimeStatus: await formatRuntimeStatus(),
+  model: readModelSettings(),
+  storage: readStorageSettings(),
 }));
 
 server.get("/model/provider", async () => ({
@@ -796,6 +809,25 @@ function scoreMemoryEvaluationCase(
     matchedSources,
     topSources: topSources.slice(0, 5),
   };
+}
+
+async function formatRuntimeStatus(): Promise<string> {
+  const model = readModelSettings();
+  const storage = readStorageSettings();
+  const lines = [
+    `Model provider: ${model.provider}`,
+    `Local chat model: ${model.localModel}`,
+    `Embedding provider: ${model.embeddingProvider}`,
+    `Local embedding model: ${model.localEmbeddingModel}`,
+    `Configured storage mode: ${storage.storageMode}`,
+    `Active storage mode: ${storage.activeStorageMode}`,
+    `Configured stores: data=${storage.dataStore}, agentRuns=${storage.agentRunStore}, prompts=${storage.promptRegistryStore}, toolPermissions=${storage.toolPermissionStore}`,
+    `Active stores: data=${storage.activeDataStore}, agentRuns=${storage.activeAgentRunStore}, prompts=${storage.activePromptRegistryStore}, toolPermissions=${storage.activeToolPermissionStore}`,
+    `Database URL configured: ${storage.hasDatabaseUrl ? "yes" : "no"}`,
+    `Storage degraded: ${storage.storageDegradedReason ?? "no"}`,
+  ];
+
+  return lines.join("\n");
 }
 
 async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
