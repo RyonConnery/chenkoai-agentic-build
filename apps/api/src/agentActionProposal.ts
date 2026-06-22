@@ -5,9 +5,15 @@ import {
 } from "@chenkoai/agent-core";
 
 const toolRequestPattern = /```(?:chenkoai-tool|json)\s*([\s\S]*?)```/gi;
+const looseToolRequestPattern = /```[a-zA-Z0-9_-]*\s*chenkoai-tool\s*([\s\S]*?)```/gi;
+const fencedObjectPattern = /```[a-zA-Z0-9_-]*\s*({[\s\S]*?})\s*```/gi;
 
 export function extractToolRequest(text: string): ToolExecuteRequest | undefined {
-  for (const match of text.matchAll(toolRequestPattern)) {
+  for (const match of [
+    ...text.matchAll(toolRequestPattern),
+    ...text.matchAll(looseToolRequestPattern),
+    ...text.matchAll(fencedObjectPattern),
+  ]) {
     const rawJson = match[1]?.trim();
     if (!rawJson) {
       continue;
@@ -24,7 +30,11 @@ export function extractToolRequest(text: string): ToolExecuteRequest | undefined
 }
 
 export function stripToolRequestBlocks(text: string): string {
-  return text.replace(toolRequestPattern, "").trim();
+  return text
+    .replace(toolRequestPattern, "")
+    .replace(looseToolRequestPattern, "")
+    .replace(fencedObjectPattern, "")
+    .trim();
 }
 
 function repairToolRequest(value: unknown): ToolExecuteRequest {

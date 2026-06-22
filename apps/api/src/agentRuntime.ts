@@ -4,6 +4,7 @@ import type { AgentMemoryRetriever } from "./agentMemory.js";
 import type { AgentRunStore } from "./agentRunStore.js";
 import type { AgentToolExecutor } from "./agentToolExecutor.js";
 import type { ModelProviderAdapter } from "./modelProvider.js";
+import type { ToolExecutionResult } from "@chenkoai/agent-core";
 import {
   AGENT_STEP_PROMPT_ID,
   createAgentStepPromptVariables,
@@ -79,7 +80,63 @@ export class AgentRuntime {
       return updated;
     }
 
-    return (await this.#toolExecutor.execute(advanced.run.id, toolRequest)).snapshot ?? updated;
+    const toolExecution = await this.#toolExecutor.execute(advanced.run.id, toolRequest);
+    const toolUpdated = toolExecution.snapshot ?? updated;
+    if (!toolExecution.tool.ok || toolExecution.tool.permissionRequest) {
+      return toolUpdated;
+    }
+
+    return (
+      await this.#store.appendStepDetails(
+        advanced.run.id,
+        startedStep.id,
+        await this.#createToolInformedAnalysis({
+          snapshot: advanced,
+          step: startedStep,
+          memoryContext,
+          runtimeStatus,
+          tool: toolExecution.tool,
+        }),
+      )
+    ) ?? toolUpdated;
+  }
+
+  async #createToolInformedAnalysis(input: {
+    snapshot: AgentRunSnapshot;
+    step: AgentRunStep;
+    memoryContext: string;
+    runtimeStatus: string;
+    tool: ToolExecutionResult;
+  }): Promise<string> {
+    const generated = await this.#modelProvider.generate({
+      systemPrompt: [
+        "You are ChenkoAI, an autonomous software-building agent.",
+        "Analyze the tool result for the active step and produce useful conclusions.",
+        "Do not include raw code dumps or JSON blocks.",
+        "Do not propose another tool request in this response.",
+      ].join(" "),
+      prompt: [
+        `Goal: ${input.snapshot.run.goal}`,
+        `Context: ${input.snapshot.run.context ?? "None provided"}`,
+        "",
+        "Relevant memory:",
+        input.memoryContext,
+        "",
+        "Current runtime status:",
+        input.runtimeStatus,
+        "",
+        `Current step ${input.step.index + 1}: ${input.step.title}`,
+        "",
+        "Tool result:",
+        summarizeToolResultForModel(input.tool),
+        "",
+        "Return a Tool-informed analysis with short sections: Findings, Evidence, Next Action.",
+      ].join("\n"),
+      temperature: 0.15,
+      maxTokens: 768,
+    });
+
+    return ["Tool-informed analysis:", stripToolRequestBlocks(generated.text)].join("\n");
   }
 }
 
@@ -120,4 +177,17 @@ function findNewlyStartedStep(
   return after.run.steps.find(
     (step) => step.status === "running" && beforeSteps.get(step.id) !== "running",
   );
+}
+
+function summarizeToolResultForModel(result: ToolExecutionResult): string {
+  return JSON.stringify(
+    {
+      name: result.name,
+      ok: result.ok,
+      error: result.error,
+      output: result.output,
+    },
+    undefined,
+    2,
+  ).slice(0, 16_000);
 }

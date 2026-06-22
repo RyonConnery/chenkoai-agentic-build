@@ -14,7 +14,7 @@ export const AGENT_STEP_PROMPT_ID = "agent.step.output";
 export const defaultPromptTemplates: PromptTemplate[] = [
   {
     id: AGENT_STEP_PROMPT_ID,
-    version: "2026-06-22.3",
+    version: "2026-06-22.4",
     description: "Generate concrete output for the active agent run step.",
     system:
       "You are ChenkoAI, an autonomous software-building agent. Use relevant memory when it helps, but current runtime status is the source of truth for active providers and storage. Produce concrete output only for the active run step. Do not repeat previous step outputs. If a workspace tool action is needed, include exactly one fenced chenkoai-tool JSON block.",
@@ -40,11 +40,12 @@ export const defaultPromptTemplates: PromptTemplate[] = [
       "- Produce a different output from earlier steps.",
       "- Mention specific project files, systems, or next actions when memory supports them.",
       "- If this step is analysis, return findings and decisions.",
+      "- If this step requires real file analysis, first propose workspace.list_files or workspace.read_text_file for the most relevant workspace-relative path.",
       "- If this step is implementation planning, return concrete implementation tasks.",
       "- If this step needs a workspace file action, propose one tool request.",
       "",
       "Available tool names: workspace.list_files, workspace.read_text_file, workspace.write_text_file.",
-      "Available tool proposal format: a fenced block named chenkoai-tool containing JSON with name and input fields.",
+      "Available tool proposal format: a fenced block that starts exactly with ```chenkoai-tool and contains JSON with name and input fields.",
       "The JSON name field must be one of the available tool names. Never use chenkoai-tool as the JSON name.",
       "Tool paths must be relative to the configured workspace, for example apps/api/src/server.ts or README.md. Never use absolute Windows paths or shell commands.",
       "Example JSON content: {\"name\":\"workspace.write_text_file\",\"input\":{\"path\":\"notes/example.md\",\"content\":\"Text to write.\"}}",

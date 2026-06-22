@@ -51,6 +51,7 @@ function findActiveStep(snapshot: AgentRunSnapshot): AgentRunStep | undefined {
 }
 
 function formatToolTranscript(result: ToolExecutionResult): string {
+  const summary = summarizeToolOutput(result.output);
   return [
     "Tool execution:",
     `- Tool: ${result.name}`,
@@ -59,14 +60,38 @@ function formatToolTranscript(result: ToolExecutionResult): string {
       ? `- Permission request: ${result.permissionRequest.id} (${result.permissionRequest.status})`
       : undefined,
     result.error ? `- Error: ${result.error}` : undefined,
-    result.output ? ["- Output:", formatJson(result.output)].join("\n") : undefined,
+    summary ? `- Output: ${summary}` : undefined,
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function formatJson(value: unknown): string {
-  return JSON.stringify(value, undefined, 2);
+function summarizeToolOutput(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return value ? String(value) : undefined;
+  }
+
+  const output = value as {
+    path?: unknown;
+    entries?: unknown;
+    truncated?: unknown;
+    content?: unknown;
+    bytesWritten?: unknown;
+  };
+
+  if (Array.isArray(output.entries)) {
+    return `Listed ${output.entries.length} entries in ${String(output.path ?? ".")}.`;
+  }
+
+  if (typeof output.content === "string") {
+    return `Read ${String(output.path ?? "workspace file")} (${output.content.length} characters${output.truncated ? ", truncated" : ""}).`;
+  }
+
+  if (typeof output.bytesWritten === "number") {
+    return `Wrote ${output.bytesWritten} bytes to ${String(output.path ?? "workspace file")}.`;
+  }
+
+  return JSON.stringify(value).slice(0, 500);
 }
 
 function requestError(statusCode: number, code: string, message: string): Error {
