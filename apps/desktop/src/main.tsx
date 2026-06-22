@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -110,6 +110,7 @@ function App() {
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
   const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const modelSettingsDirty = useRef(false);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [report, setReport] = useState<RunReport | undefined>();
   const [goal, setGoal] = useState("Build the next ChenkoAI capability");
@@ -154,7 +155,9 @@ function App() {
 
       setApiState("online");
       setModelProvider(modelPayload.provider);
-      setModelSettings(settingsPayload);
+      if (!modelSettingsDirty.current) {
+        setModelSettings(settingsPayload);
+      }
       setStorageSettings(storagePayload);
       setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
@@ -425,9 +428,10 @@ function App() {
                   Model provider
                   <select
                     value={modelSettings.provider}
-                    onChange={(event) =>
-                      setModelSettings({ ...modelSettings, provider: event.target.value })
-                    }
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
+                      setModelSettings({ ...modelSettings, provider: event.target.value });
+                    }}
                   >
                     <option value="mock">Mock</option>
                     <option value="openai-compatible">OpenAI compatible</option>
@@ -438,12 +442,13 @@ function App() {
                   Embedding provider
                   <select
                     value={modelSettings.embeddingProvider}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
                       setModelSettings({
                         ...modelSettings,
                         embeddingProvider: event.target.value,
-                      })
-                    }
+                      });
+                    }}
                   >
                     <option value="mock">Mock</option>
                     <option value="openai-compatible">OpenAI compatible</option>
@@ -456,25 +461,53 @@ function App() {
                     placeholder={modelSettings.hasOpenAiApiKey ? "Saved" : "Not saved"}
                     type="password"
                     value={openaiApiKey}
-                    onChange={(event) => setOpenaiApiKey(event.target.value)}
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
+                      setOpenaiApiKey(event.target.value);
+                    }}
                   />
                 </label>
                 <label>
                   OpenAI model
                   <input
                     value={modelSettings.openaiModel}
-                    onChange={(event) =>
-                      setModelSettings({ ...modelSettings, openaiModel: event.target.value })
-                    }
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
+                      setModelSettings({ ...modelSettings, openaiModel: event.target.value });
+                    }}
                   />
                 </label>
                 <label>
-                  Local model
+                  Local URL
+                  <input
+                    value={modelSettings.localBaseUrl}
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
+                      setModelSettings({ ...modelSettings, localBaseUrl: event.target.value });
+                    }}
+                  />
+                </label>
+                <label>
+                  Local chat model
                   <input
                     value={modelSettings.localModel}
-                    onChange={(event) =>
-                      setModelSettings({ ...modelSettings, localModel: event.target.value })
-                    }
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
+                      setModelSettings({ ...modelSettings, localModel: event.target.value });
+                    }}
+                  />
+                </label>
+                <label>
+                  Local embedding model
+                  <input
+                    value={modelSettings.localEmbeddingModel}
+                    onChange={(event) => {
+                      modelSettingsDirty.current = true;
+                      setModelSettings({
+                        ...modelSettings,
+                        localEmbeddingModel: event.target.value,
+                      });
+                    }}
                   />
                 </label>
                 <button
@@ -488,6 +521,7 @@ function App() {
                           openaiApiKey,
                         },
                       );
+                      modelSettingsDirty.current = false;
                       setModelSettings(saved);
                       setOpenaiApiKey("");
                       setMessage("Model settings saved. Restart the app to use the new provider.");

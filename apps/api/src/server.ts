@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { Pool } from "pg";
 import {
   type AgentAutoRunRequest,
   type AgentRunRequest,
@@ -23,27 +24,36 @@ import { AgentToolExecutor } from "./agentToolExecutor.js";
 import {
   readModelSettings,
   readStorageSettings,
+  loadLocalSettingsIntoEnv,
   saveModelSettings,
   saveStorageSettings,
   type ModelSettingsMutation,
   type StorageSettingsMutation,
 } from "./appSettings.js";
 import { createDataStore } from "./dataPersistence.js";
-import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
+import {
+  createEmbeddingProviderAdapter,
+  type EmbeddingProviderAdapter,
+} from "./embeddingProvider.js";
 import { LocalToolRegistry } from "./localTools.js";
-import { createModelProviderAdapter } from "./modelProvider.js";
+import {
+  createModelProviderAdapter,
+  type ModelProviderAdapter,
+} from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
 import { SystemScanner } from "./systemScanner.js";
 import { createToolPermissionStore } from "./toolPermissionPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
+await loadLocalSettingsIntoEnv();
+await fallBackToMemoryIfPostgresIsUnavailable();
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
-const embeddingProvider = createEmbeddingProviderAdapter();
+const embeddingProvider = createDynamicEmbeddingProviderAdapter();
 const toolPermissions = createToolPermissionStore();
 const localTools = new LocalToolRegistry(toolPermissions);
-const modelProvider = createModelProviderAdapter();
+const modelProvider = createDynamicModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
 const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
@@ -74,6 +84,7 @@ server.options("/*", async (_request, reply) => reply.code(204).send());
 server.get("/health", async () => ({
   ok: true,
   service: "chenkoai-api",
+  storageDegradedReason: process.env.CHENKOAI_STORAGE_DEGRADED_REASON,
 }));
 
 server.get("/model/provider", async () => ({
@@ -367,4 +378,71 @@ function toRequestError(
     code: typeof maybeRequestError.code === "string" ? maybeRequestError.code : undefined,
     message: maybeRequestError.message,
   };
+}
+
+function createDynamicModelProviderAdapter(): ModelProviderAdapter {
+  return {
+    get provider() {
+      return createModelProviderAdapter().provider;
+    },
+    async generate(input) {
+      return await createModelProviderAdapter().generate(input);
+    },
+  };
+}
+
+function createDynamicEmbeddingProviderAdapter(): EmbeddingProviderAdapter {
+  return {
+    get provider() {
+      return createEmbeddingProviderAdapter().provider;
+    },
+    async embed(input) {
+      return await createEmbeddingProviderAdapter().embed(input);
+    },
+  };
+}
+
+async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
+  const postgresStores = [
+    process.env.DATA_STORE,
+    process.env.AGENT_RUN_STORE,
+    process.env.PROMPT_REGISTRY_STORE,
+    process.env.TOOL_PERMISSION_STORE,
+  ].some((store) => store === "postgres");
+
+  if (!postgresStores) {
+    return;
+  }
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    process.env.CHENKOAI_STORAGE_DEGRADED_REASON =
+      "PostgreSQL storage was requested, but DATABASE_URL is missing.";
+    useMemoryStores();
+    return;
+  }
+
+  const pool = new Pool({ connectionString });
+  try {
+    await pool.query("select 1");
+  } catch (error) {
+    process.env.CHENKOAI_STORAGE_DEGRADED_REASON =
+      error instanceof Error
+        ? `PostgreSQL is unavailable: ${error.message}`
+        : "PostgreSQL is unavailable.";
+    useMemoryStores();
+  } finally {
+    await pool.end().catch(() => undefined);
+  }
+}
+
+function useMemoryStores(): void {
+  process.env.CHENKOAI_CONFIGURED_DATA_STORE = process.env.DATA_STORE;
+  process.env.CHENKOAI_CONFIGURED_AGENT_RUN_STORE = process.env.AGENT_RUN_STORE;
+  process.env.CHENKOAI_CONFIGURED_PROMPT_REGISTRY_STORE = process.env.PROMPT_REGISTRY_STORE;
+  process.env.CHENKOAI_CONFIGURED_TOOL_PERMISSION_STORE = process.env.TOOL_PERMISSION_STORE;
+  process.env.DATA_STORE = "memory";
+  process.env.AGENT_RUN_STORE = "memory";
+  process.env.PROMPT_REGISTRY_STORE = "memory";
+  process.env.TOOL_PERMISSION_STORE = "memory";
 }

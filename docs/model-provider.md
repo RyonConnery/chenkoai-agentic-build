@@ -48,7 +48,7 @@ This adapter targets `/chat/completions` so it can also work with other OpenAI-c
 ```powershell
 $env:MODEL_PROVIDER="local-http"
 $env:LOCAL_LLM_BASE_URL="http://localhost:11434"
-$env:LOCAL_LLM_MODEL="llama3.1"
+$env:LOCAL_LLM_MODEL="llama3.2:3b"
 ```
 
 The local adapter currently targets an Ollama-style `/api/generate` endpoint.

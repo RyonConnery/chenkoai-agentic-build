@@ -44,6 +44,10 @@ export type StorageSettingsMutation = {
   databaseUrl?: string;
 };
 
+export async function loadLocalSettingsIntoEnv(): Promise<void> {
+  Object.assign(process.env, await readFileSettings());
+}
+
 export function readModelSettings(): ModelSettingsResponse {
   const config = readRuntimeSettings();
 
@@ -55,7 +59,7 @@ export function readModelSettings(): ModelSettingsResponse {
     openaiModel: config.OPENAI_MODEL ?? "gpt-4.1-mini",
     openaiEmbeddingModel: config.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
     localBaseUrl: config.LOCAL_LLM_BASE_URL ?? "http://localhost:11434",
-    localModel: config.LOCAL_LLM_MODEL ?? "llama3.1",
+    localModel: config.LOCAL_LLM_MODEL ?? "llama3.2:3b",
     localEmbeddingModel: config.LOCAL_EMBEDDING_MODEL ?? "nomic-embed-text",
     hasOpenAiApiKey: Boolean(config.OPENAI_API_KEY),
   };
@@ -63,10 +67,12 @@ export function readModelSettings(): ModelSettingsResponse {
 
 export function readStorageSettings(): StorageSettingsResponse {
   const config = readRuntimeSettings();
-  const dataStore = config.DATA_STORE ?? "memory";
-  const agentRunStore = config.AGENT_RUN_STORE ?? "memory";
-  const promptRegistryStore = config.PROMPT_REGISTRY_STORE ?? "memory";
-  const toolPermissionStore = config.TOOL_PERMISSION_STORE ?? "memory";
+  const dataStore = config.CONFIGURED_DATA_STORE ?? config.DATA_STORE ?? "memory";
+  const agentRunStore = config.CONFIGURED_AGENT_RUN_STORE ?? config.AGENT_RUN_STORE ?? "memory";
+  const promptRegistryStore =
+    config.CONFIGURED_PROMPT_REGISTRY_STORE ?? config.PROMPT_REGISTRY_STORE ?? "memory";
+  const toolPermissionStore =
+    config.CONFIGURED_TOOL_PERMISSION_STORE ?? config.TOOL_PERMISSION_STORE ?? "memory";
   const storageMode =
     dataStore === "postgres" &&
     agentRunStore === "postgres" &&
@@ -103,7 +109,7 @@ export async function saveModelSettings(input: ModelSettingsMutation): Promise<M
     OPENAI_MODEL: readString(input.openaiModel, "gpt-4.1-mini"),
     OPENAI_EMBEDDING_MODEL: readString(input.openaiEmbeddingModel, "text-embedding-3-small"),
     LOCAL_LLM_BASE_URL: readString(input.localBaseUrl, "http://localhost:11434"),
-    LOCAL_LLM_MODEL: readString(input.localModel, "llama3.1"),
+    LOCAL_LLM_MODEL: readString(input.localModel, "llama3.2:3b"),
     LOCAL_EMBEDDING_MODEL: readString(input.localEmbeddingModel, "nomic-embed-text"),
   };
 
@@ -144,9 +150,13 @@ export async function saveStorageSettings(
 function readRuntimeSettings(): Record<string, string | undefined> {
   return {
     DATA_STORE: process.env.DATA_STORE,
+    CONFIGURED_DATA_STORE: process.env.CHENKOAI_CONFIGURED_DATA_STORE,
     AGENT_RUN_STORE: process.env.AGENT_RUN_STORE,
+    CONFIGURED_AGENT_RUN_STORE: process.env.CHENKOAI_CONFIGURED_AGENT_RUN_STORE,
     PROMPT_REGISTRY_STORE: process.env.PROMPT_REGISTRY_STORE,
+    CONFIGURED_PROMPT_REGISTRY_STORE: process.env.CHENKOAI_CONFIGURED_PROMPT_REGISTRY_STORE,
     TOOL_PERMISSION_STORE: process.env.TOOL_PERMISSION_STORE,
+    CONFIGURED_TOOL_PERMISSION_STORE: process.env.CHENKOAI_CONFIGURED_TOOL_PERMISSION_STORE,
     DATABASE_URL: process.env.DATABASE_URL,
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,

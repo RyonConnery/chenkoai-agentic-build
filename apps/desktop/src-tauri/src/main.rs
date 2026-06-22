@@ -26,8 +26,8 @@ fn main() {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                 if let Some(state) = window.try_state::<ApiProcess>() {
                     if let Ok(mut child) = state.0.lock() {
-                        if let Some(mut api) = child.take() {
-                            let _ = api.kill();
+                        if let Some(api) = child.take() {
+                            kill_process_tree(api);
                         }
                     }
                 }
@@ -41,7 +41,7 @@ fn start_local_api() -> Option<Child> {
     let project_root = project_root();
     let workspace_root = project_root.to_string_lossy().to_string();
     let mut command = if cfg!(target_os = "windows") {
-        let mut command = Command::new("npx.cmd");
+        let mut command = Command::new(windows_npx_command());
         command.args(["tsx", "apps/api/src/server.ts"]);
         command.creation_flags(0x08000000);
         command
@@ -69,6 +69,40 @@ fn start_local_api() -> Option<Child> {
     }
 
     command.spawn().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_npx_command() -> String {
+    let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| {
+        "C:\\Program Files".to_string()
+    });
+    let npx_path = PathBuf::from(program_files).join("nodejs").join("npx.cmd");
+
+    if npx_path.exists() {
+        return npx_path.to_string_lossy().to_string();
+    }
+
+    "npx.cmd".to_string()
+}
+
+fn kill_process_tree(mut child: Child) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .creation_flags(0x08000000)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = child.kill();
+    }
+
+    let _ = child.wait();
 }
 
 fn project_root() -> PathBuf {
