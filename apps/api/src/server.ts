@@ -57,7 +57,7 @@ const modelProvider = createDynamicModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
 const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
-const agentPlanner = new AgentPlanner(agentRunStore, modelProvider);
+const agentPlanner = new AgentPlanner(agentRunStore, modelProvider, agentMemoryRetriever);
 const agentRunReporter = new AgentRunReporter(agentRunStore, toolPermissions);
 const systemScanner = new SystemScanner({
   dataStore,

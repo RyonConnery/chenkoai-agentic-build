@@ -1,14 +1,21 @@
 import type { AgentRunSnapshot } from "@chenkoai/agent-core";
+import type { AgentMemoryRetriever } from "./agentMemory.js";
 import type { AgentRunStore } from "./agentRunStore.js";
 import type { ModelProviderAdapter } from "./modelProvider.js";
 
 export class AgentPlanner {
   readonly #store: AgentRunStore;
   readonly #modelProvider: ModelProviderAdapter;
+  readonly #memoryRetriever?: AgentMemoryRetriever;
 
-  constructor(store: AgentRunStore, modelProvider: ModelProviderAdapter) {
+  constructor(
+    store: AgentRunStore,
+    modelProvider: ModelProviderAdapter,
+    memoryRetriever?: AgentMemoryRetriever,
+  ) {
     this.#store = store;
     this.#modelProvider = modelProvider;
+    this.#memoryRetriever = memoryRetriever;
   }
 
   async plan(runId: string): Promise<AgentRunSnapshot | undefined> {
@@ -17,14 +24,21 @@ export class AgentPlanner {
       return undefined;
     }
 
+    const memoryContext = this.#memoryRetriever
+      ? await this.#memoryRetriever.retrieveForPlanning(snapshot)
+      : "None";
     const generated = await this.#modelProvider.generate({
       systemPrompt:
-        "You are ChenkoAI's planner. Return only a JSON array of concise step titles.",
+        "You are ChenkoAI's planner. Use relevant stored memory to make the plan specific to this project. Return only a JSON array of concise step titles.",
       prompt: [
         `Goal: ${snapshot.run.goal}`,
         `Context: ${snapshot.run.context ?? "None provided"}`,
         `Maximum steps: ${snapshot.run.maxSteps}`,
-        "Create a practical autonomous build plan.",
+        "",
+        "Relevant stored memory:",
+        memoryContext,
+        "",
+        "Create a practical autonomous build plan grounded in the relevant stored memory.",
       ].join("\n"),
       temperature: 0.1,
       maxTokens: 512,

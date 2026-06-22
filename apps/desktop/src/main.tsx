@@ -25,6 +25,13 @@ type RunReport = {
   runId: string;
   status: string;
   goal: string;
+  steps: {
+    id: string;
+    index: number;
+    title: string;
+    status: string;
+    details?: string;
+  }[];
   progress: {
     totalSteps: number;
     pendingSteps: number;
@@ -464,6 +471,22 @@ function App() {
                 <section className="plain-section">
                   <h3>Next Action</h3>
                   <p>{report.nextAction}</p>
+                </section>
+                <section className="plain-section">
+                  <h3>Run Steps</h3>
+                  <div className="step-list">
+                    {report.steps.map((step) => (
+                      <article className="step-card" key={step.id}>
+                        <div className="step-card-header">
+                          <strong>
+                            {step.index + 1}. {step.title}
+                          </strong>
+                          <span>{step.status}</span>
+                        </div>
+                        {step.details ? <pre>{step.details}</pre> : <p className="muted">Waiting to run.</p>}
+                      </article>
+                    ))}
+                  </div>
                 </section>
                 <section className="plain-section">
                   <h3>Pending Permissions</h3>

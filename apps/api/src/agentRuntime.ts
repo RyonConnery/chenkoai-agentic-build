@@ -64,7 +64,7 @@ export class AgentRuntime {
     const updated = await this.#store.updateStepDetails(
       advanced.run.id,
       startedStep.id,
-      generated.text,
+      formatStepDetails(memoryContext, generated.text),
     );
 
     const toolRequest = extractToolRequest(generated.text);
@@ -74,6 +74,29 @@ export class AgentRuntime {
 
     return (await this.#toolExecutor.execute(advanced.run.id, toolRequest)).snapshot ?? updated;
   }
+}
+
+function formatStepDetails(memoryContext: string, generatedText: string): string {
+  const memorySummary = summarizeMemoryContext(memoryContext);
+  return [
+    memorySummary ? ["Memory used:", memorySummary].join("\n") : undefined,
+    ["Agent output:", generatedText].join("\n"),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function summarizeMemoryContext(memoryContext: string): string {
+  if (memoryContext === "None") {
+    return "";
+  }
+
+  return memoryContext
+    .split(/\n\n+/)
+    .map((entry) => entry.split(/\r?\n/)[0]?.trim())
+    .filter((line): line is string => Boolean(line))
+    .slice(0, 4)
+    .join("\n");
 }
 
 function findNewlyStartedStep(

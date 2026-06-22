@@ -280,6 +280,7 @@ export type AgentRunReport = {
   runId: string;
   status: AgentRunStatus;
   goal: string;
+  steps: AgentRunStep[];
   progress: {
     totalSteps: number;
     pendingSteps: number;

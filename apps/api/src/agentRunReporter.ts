@@ -28,6 +28,7 @@ export class AgentRunReporter {
       runId: snapshot.run.id,
       status: snapshot.run.status,
       goal: snapshot.run.goal,
+      steps: snapshot.run.steps,
       progress,
       activity: {
         toolExecutions: countMatches(snapshot, /Tool execution:/g),

@@ -23,6 +23,18 @@ export class AgentMemoryRetriever {
     }
 
     const query = createMemoryQuery(snapshot, step);
+    return await this.#search(query);
+  }
+
+  async retrieveForPlanning(snapshot: AgentRunSnapshot): Promise<string> {
+    if (this.#limit === 0) {
+      return "None";
+    }
+
+    return await this.#search(createPlanningMemoryQuery(snapshot));
+  }
+
+  async #search(query: string): Promise<string> {
     const embedding = await this.#embeddingProvider.embed(query);
     const results = await this.#dataStore.searchChunks({
       embedding: embedding.embedding,
@@ -32,6 +44,16 @@ export class AgentMemoryRetriever {
 
     return formatMemoryResults(results);
   }
+}
+
+function createPlanningMemoryQuery(snapshot: AgentRunSnapshot): string {
+  return [
+    snapshot.run.goal,
+    snapshot.run.context,
+    "ChenkoAI workspace overview current capabilities architecture roadmap data storage tools agent runtime",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function createMemoryQuery(snapshot: AgentRunSnapshot, step: AgentRunStep): string {
