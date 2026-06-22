@@ -25,6 +25,7 @@ import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
 import { LocalToolRegistry } from "./localTools.js";
 import { createModelProviderAdapter } from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
+import { SystemScanner } from "./systemScanner.js";
 import { createToolPermissionStore } from "./toolPermissionPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
@@ -40,6 +41,11 @@ const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvid
 const agentToolExecutor = new AgentToolExecutor(agentRunStore, localTools);
 const agentPlanner = new AgentPlanner(agentRunStore, modelProvider);
 const agentRunReporter = new AgentRunReporter(agentRunStore, toolPermissions);
+const systemScanner = new SystemScanner({
+  dataStore,
+  embeddingProvider,
+  workspaceRoot: process.env.CHENKOAI_WORKSPACE_ROOT,
+});
 const agentRuntime = new AgentRuntime(
   agentRunStore,
   modelProvider,
@@ -69,6 +75,16 @@ server.get("/model/provider", async () => ({
 server.get("/embeddings/provider", async () => ({
   provider: embeddingProvider.provider,
 }));
+
+server.get("/system/profile", async () => systemScanner.profile());
+
+server.post<{ Body: { maxFiles?: number; maxFileBytes?: number } }>(
+  "/system/scan",
+  async (request, reply) => {
+    const result = await systemScanner.scan(request.body ?? {});
+    return reply.code(201).send(result);
+  },
+);
 
 server.post<{ Body: ModelGenerateRequest }>("/model/generate", async (request) => {
   return await modelProvider.generate(request.body);

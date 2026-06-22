@@ -34,9 +34,10 @@ fn main() {
 
 fn start_local_api() -> Option<Child> {
     let project_root = project_root();
+    let workspace_root = project_root.to_string_lossy().to_string();
     let mut command = if cfg!(target_os = "windows") {
-        let mut command = Command::new("cmd");
-        command.args(["/C", "npx tsx apps/api/src/server.ts"]);
+        let mut command = Command::new("npx.cmd");
+        command.args(["tsx", "apps/api/src/server.ts"]);
         command.creation_flags(0x08000000);
         command
     } else {
@@ -53,7 +54,7 @@ fn start_local_api() -> Option<Child> {
         .env("AGENT_RUN_STORE", "memory")
         .env("PROMPT_REGISTRY_STORE", "memory")
         .env("TOOL_PERMISSION_STORE", "memory")
-        .env("CHENKOAI_WORKSPACE_ROOT", "local-workspace")
+        .env("CHENKOAI_WORKSPACE_ROOT", workspace_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

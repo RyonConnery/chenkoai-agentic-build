@@ -42,6 +42,36 @@ type RunReport = {
   generatedAt: string;
 };
 
+type DataDataset = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DataDocument = {
+  id: string;
+  title: string;
+  sourceType: string;
+  sourceUri?: string;
+  chunkCount: number;
+};
+
+type SystemProfile = {
+  workspaceRoot: string;
+  datasetName: string;
+};
+
+type SystemScanResult = {
+  datasetName: string;
+  workspaceRoot: string;
+  scannedFiles: number;
+  ingestedDocuments: number;
+  skippedFiles: number;
+  embeddedChunks: number;
+  truncated: boolean;
+};
+
 type ApiState = "checking" | "online" | "offline";
 
 function App() {
@@ -49,6 +79,10 @@ function App() {
   const [modelProvider, setModelProvider] = useState("unknown");
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
+  const [datasets, setDatasets] = useState<DataDataset[]>([]);
+  const [documents, setDocuments] = useState<DataDocument[]>([]);
+  const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
+  const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
   const [selectedRunId, setSelectedRunId] = useState("");
   const [report, setReport] = useState<RunReport | undefined>();
   const [goal, setGoal] = useState("Build the next ChenkoAI capability");
@@ -65,11 +99,15 @@ function App() {
 
   async function refresh(nextRunId = selectedRunId): Promise<void> {
     try {
-      const [health, modelPayload, runPayload, permissionPayload] = await Promise.all([
+      const [health, modelPayload, profilePayload, runPayload, permissionPayload, datasetPayload, documentPayload] =
+        await Promise.all([
         apiGet<{ ok: boolean }>("/health"),
         apiGet<{ provider: string }>("/model/provider"),
+        apiGet<SystemProfile>("/system/profile"),
         apiGet<{ runs: RunListItem[] }>("/agent/runs"),
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
+        apiGet<{ datasets: DataDataset[] }>("/data/datasets"),
+        apiGet<{ documents: DataDocument[] }>("/data/documents"),
       ]);
 
       if (!health.ok) {
@@ -78,8 +116,11 @@ function App() {
 
       setApiState("online");
       setModelProvider(modelPayload.provider);
+      setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
       setPermissions(permissionPayload.permissions);
+      setDatasets(datasetPayload.datasets);
+      setDocuments(documentPayload.documents);
 
       const runId = nextRunId || runPayload.runs[0]?.id || "";
       setSelectedRunId(runId);
@@ -87,6 +128,7 @@ function App() {
     } catch {
       setApiState("offline");
       setModelProvider("unknown");
+      setSystemProfile(undefined);
       setReport(undefined);
     }
   }
@@ -133,10 +175,42 @@ function App() {
         <section className="dashboard">
           <section className="workspace">
             <div className="section-heading">
-              <h2>Create Run</h2>
+              <h2>System Memory</h2>
               <button disabled={busy} onClick={() => void refresh()}>
                 Refresh
               </button>
+            </div>
+            <p className="muted">{systemProfile?.workspaceRoot ?? "Workspace unavailable."}</p>
+            <button
+              disabled={busy || apiState !== "online"}
+              onClick={() =>
+                void runAction(async () => {
+                  const result = await apiPost<SystemScanResult>("/system/scan", {
+                    maxFiles: 120,
+                    maxFileBytes: 160000,
+                  });
+                  setScanResult(result);
+                  setMessage(
+                    `System scan ingested ${result.ingestedDocuments} documents and embedded ${result.embeddedChunks} chunks.`,
+                  );
+                  return selectedRunId || undefined;
+                })
+              }
+            >
+              Scan Workspace
+            </button>
+            <div className="memory-summary">
+              <Metric label="Datasets" value={String(datasets.length)} />
+              <Metric label="Documents" value={String(documents.length)} />
+            </div>
+            {scanResult ? (
+              <p className="muted">
+                Last scan: {scanResult.scannedFiles} files checked, {scanResult.skippedFiles} skipped.
+              </p>
+            ) : null}
+
+            <div className="section-heading compact-heading">
+              <h2>Create Run</h2>
             </div>
             <label>
               Goal
@@ -302,6 +376,17 @@ function App() {
           </section>
 
           <aside className="side-panel">
+            <h2>Knowledge Base</h2>
+            {documents.length === 0 ? (
+              <p className="muted">No scanned documents yet.</p>
+            ) : (
+              documents.slice(0, 6).map((document) => (
+                <div className="permission-row" key={document.id}>
+                  <strong>{document.title}</strong>
+                  <span>{document.chunkCount} chunks</span>
+                </div>
+              ))
+            )}
             <h2>Permission Queue</h2>
             {permissions.length === 0 ? (
               <p className="muted">No permission history.</p>

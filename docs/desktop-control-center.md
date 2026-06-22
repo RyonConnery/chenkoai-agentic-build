@@ -27,11 +27,13 @@ The desktop UI expects the API at `http://127.0.0.1:8787`.
 
 ## Operator Workflow
 
-1. Create a run with a goal, context, and max step limit.
-2. Leave `Start agent automatically` checked for the normal workflow.
-3. Click `Create & Start` to create the run and immediately let the bounded agent loop advance through steps.
-4. Review the run report for status, progress, tool executions, pending permissions, and next action.
-5. Approve or deny any pending tool permission from the report panel.
+1. Click `Scan Workspace` to ingest readable project files into ChenkoAI memory.
+2. Confirm the Knowledge Base document count increases.
+3. Create a run with a goal, context, and max step limit.
+4. Leave `Start agent automatically` checked for the normal workflow.
+5. Click `Create & Start` to create the run and immediately let the bounded agent loop advance through steps.
+6. Review the run report for status, progress, tool executions, pending permissions, and next action.
+7. Approve or deny any pending tool permission from the report panel.
 
 Use `Plan` or `Auto Run` manually only when `Start agent automatically` is unchecked or an existing run needs another step.
 
@@ -55,6 +57,7 @@ Expected result:
 ## Production Notes
 
 - The API sends CORS headers for the desktop origin. Use `CHENKOAI_DESKTOP_ORIGIN` to restrict it in packaged builds.
+- `Scan Workspace` currently scans the configured ChenkoAI workspace root, skips build/dependency folders, ingests readable text/code files, and rebuilds embeddings for semantic memory.
 - The current packaged app starts the API from this repo checkout. A future sidecar build should bundle the API so the installer can run independently on machines without Node.js or the source tree.
 - Real desktop packaging should move the API base URL into desktop configuration instead of keeping it hardcoded.
 - Durable operation should use PostgreSQL-backed stores instead of memory stores.
