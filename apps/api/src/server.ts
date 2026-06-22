@@ -287,6 +287,64 @@ server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
   };
 });
 
+server.post<{ Body: { limit?: number } }>("/memory/evaluate", async (request) => {
+  const limit = Math.max(1, Math.min(8, request.body?.limit ?? 5));
+  const cases: MemoryEvaluationCaseResult[] = [];
+  let provider = modelProvider.provider;
+  let model = "";
+  let embeddingProviderName = embeddingProvider.provider;
+  let embeddingModel = "";
+
+  for (const testCase of memoryEvaluationCases) {
+    const embedding = await embeddingProvider.embed(testCase.query);
+    embeddingProviderName = embedding.provider;
+    embeddingModel = embedding.model;
+    const candidates = await dataStore.searchChunks({
+      embedding: embedding.embedding,
+      embeddingModel: embedding.model,
+      limit: Math.min(80, Math.max(limit * 8, 24)),
+    });
+    const results = rerankMemoryResults(candidates, limit, {
+      overviewIntent: isWorkspaceOverviewQuestion(testCase.query),
+    });
+    const generated = await modelProvider.generate({
+      systemPrompt: [
+        "You are ChenkoAI's memory evaluator.",
+        "Answer using only the provided memory context.",
+        "Be direct and concrete.",
+      ].join(" "),
+      prompt: [
+        `Question: ${testCase.query}`,
+        "",
+        "Memory context:",
+        formatAnswerContext(results, {
+          overviewIntent: isWorkspaceOverviewQuestion(testCase.query),
+        }) || "No matching memory chunks were found.",
+      ].join("\n"),
+      temperature: 0.1,
+      maxTokens: 420,
+    });
+    provider = generated.provider;
+    model = generated.model;
+    cases.push(scoreMemoryEvaluationCase(testCase, generated.text, results));
+  }
+
+  const passed = cases.filter((testCase) => testCase.passed).length;
+  return {
+    provider,
+    model,
+    embeddingProvider: embeddingProviderName,
+    embeddingModel,
+    summary: {
+      total: cases.length,
+      passed,
+      failed: cases.length - passed,
+      percent: cases.length === 0 ? 0 : Math.round((passed / cases.length) * 100),
+    },
+    cases,
+  };
+});
+
 server.get("/prompts", async () => ({
   prompts: await promptRegistry.list(),
 }));
@@ -654,6 +712,90 @@ function memoryResultRole(
     return "build configuration";
   }
   return "implementation detail";
+}
+
+type MemoryEvaluationCase = {
+  id: string;
+  query: string;
+  expectedKeywords: string[];
+  expectedSources: string[];
+};
+
+type MemoryEvaluationCaseResult = {
+  id: string;
+  query: string;
+  passed: boolean;
+  score: number;
+  answer: string;
+  matchedKeywords: string[];
+  missingKeywords: string[];
+  matchedSources: string[];
+  topSources: string[];
+};
+
+const memoryEvaluationCases: MemoryEvaluationCase[] = [
+  {
+    id: "workspace-overview",
+    query: "What does this ChenkoAI workspace contain?",
+    expectedKeywords: ["desktop", "api", "postgres", "ollama"],
+    expectedSources: ["chenkoai://workspace-overview", "readme.md", "docs/architecture.md"],
+  },
+  {
+    id: "durable-memory",
+    query: "How does ChenkoAI store durable memory and searchable chunks?",
+    expectedKeywords: ["postgres", "chunks", "embeddings", "pgvector"],
+    expectedSources: ["docs/data-ingestion.md", "chenkoai://workspace-overview"],
+  },
+  {
+    id: "safe-tools",
+    query: "How should ChenkoAI safely execute local workspace tools?",
+    expectedKeywords: ["permission", "approval", "tool", "workspace"],
+    expectedSources: ["docs/local-tools.md", "chenkoai://workspace-overview"],
+  },
+  {
+    id: "agent-memory",
+    query: "How does ChenkoAI use memory during agent runs?",
+    expectedKeywords: ["memory", "retrieval", "step", "agent"],
+    expectedSources: ["docs/agent-run-lifecycle.md", "chenkoai://workspace-overview"],
+  },
+];
+
+function scoreMemoryEvaluationCase(
+  testCase: MemoryEvaluationCase,
+  answer: string,
+  results: Awaited<ReturnType<typeof dataStore.searchChunks>>,
+): MemoryEvaluationCaseResult {
+  const normalizedAnswer = answer.toLowerCase();
+  const matchedKeywords = testCase.expectedKeywords.filter((keyword) =>
+    normalizedAnswer.includes(keyword.toLowerCase()),
+  );
+  const missingKeywords = testCase.expectedKeywords.filter(
+    (keyword) => !matchedKeywords.includes(keyword),
+  );
+  const topSources = results.map((result) =>
+    (result.document.sourceUri ?? result.document.title).replace(/\\/g, "/").toLowerCase(),
+  );
+  const matchedSources = testCase.expectedSources.filter((source) =>
+    topSources.some((candidate) => candidate === source.toLowerCase()),
+  );
+  const keywordScore = matchedKeywords.length / testCase.expectedKeywords.length;
+  const sourceScore =
+    testCase.expectedSources.length === 0
+      ? 1
+      : Math.min(1, matchedSources.length / Math.min(2, testCase.expectedSources.length));
+  const score = Math.round((keywordScore * 0.7 + sourceScore * 0.3) * 100);
+
+  return {
+    id: testCase.id,
+    query: testCase.query,
+    passed: score >= 70,
+    score,
+    answer,
+    matchedKeywords,
+    missingKeywords,
+    matchedSources,
+    topSources: topSources.slice(0, 5),
+  };
 }
 
 async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {

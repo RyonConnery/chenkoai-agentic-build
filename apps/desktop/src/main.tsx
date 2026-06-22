@@ -92,6 +92,30 @@ type MemoryAnswer = {
   results: DataSearchResult[];
 };
 
+type MemoryEvaluation = {
+  provider: string;
+  model: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    percent: number;
+  };
+  cases: {
+    id: string;
+    query: string;
+    passed: boolean;
+    score: number;
+    answer: string;
+    matchedKeywords: string[];
+    missingKeywords: string[];
+    matchedSources: string[];
+    topSources: string[];
+  }[];
+};
+
 type SystemProfile = {
   workspaceRoot: string;
   datasetName: string;
@@ -144,6 +168,7 @@ function App() {
   const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
   const [memoryQuestion, setMemoryQuestion] = useState("What does this workspace contain?");
   const [memoryAnswer, setMemoryAnswer] = useState<MemoryAnswer | undefined>();
+  const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
   const [openaiApiKey, setOpenaiApiKey] = useState("");
@@ -339,6 +364,52 @@ function App() {
                         {result.dataset.name} | {result.document.sourceType}
                       </p>
                       <p>{memorySourceSnippet(result.chunk.content)}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <div className="section-heading compact-heading">
+              <h2>Memory Evaluation</h2>
+            </div>
+            <button
+              disabled={busy || apiState !== "online"}
+              onClick={() =>
+                void runAction(async () => {
+                  const evaluation = await apiPost<MemoryEvaluation>("/memory/evaluate", {
+                    limit: 5,
+                  });
+                  setMemoryEvaluation(evaluation);
+                  setMessage(
+                    `Memory evaluation scored ${evaluation.summary.percent}% (${evaluation.summary.passed}/${evaluation.summary.total} passed).`,
+                  );
+                  return selectedRunId || undefined;
+                })
+              }
+            >
+              Run Memory Evaluation
+            </button>
+            {memoryEvaluation ? (
+              <section className="memory-evaluation">
+                <div className="memory-evaluation-summary">
+                  <Metric label="Score" value={`${memoryEvaluation.summary.percent}%`} />
+                  <Metric label="Passed" value={`${memoryEvaluation.summary.passed}/${memoryEvaluation.summary.total}`} />
+                </div>
+                <p className="muted">
+                  Model: {memoryEvaluation.model} | Embeddings: {memoryEvaluation.embeddingModel}
+                </p>
+                <div className="memory-eval-list">
+                  {memoryEvaluation.cases.map((testCase) => (
+                    <article className={testCase.passed ? "memory-eval passed" : "memory-eval failed"} key={testCase.id}>
+                      <div className="memory-eval-header">
+                        <strong>{testCase.query}</strong>
+                        <span>{testCase.score}%</span>
+                      </div>
+                      <p>{cleanDisplayText(testCase.answer)}</p>
+                      {testCase.missingKeywords.length > 0 ? (
+                        <p className="muted">Missing: {testCase.missingKeywords.join(", ")}</p>
+                      ) : null}
                     </article>
                   ))}
                 </div>

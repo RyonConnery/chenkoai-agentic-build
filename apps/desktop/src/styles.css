@@ -246,6 +246,67 @@ textarea {
   margin: 12px 0;
 }
 
+.memory-evaluation {
+  margin-top: 12px;
+}
+
+.memory-evaluation-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.memory-eval-list {
+  display: grid;
+  gap: 8px;
+}
+
+.memory-eval {
+  border: 1px solid #e2e7f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.memory-eval.passed {
+  background: #f2fbf5;
+  border-color: #ccebd5;
+}
+
+.memory-eval.failed {
+  background: #fff8f1;
+  border-color: #f3d5b8;
+}
+
+.memory-eval-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.memory-eval-header strong {
+  line-height: 1.3;
+}
+
+.memory-eval-header span {
+  background: white;
+  border-radius: 999px;
+  color: #1f4ebf;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 7px;
+}
+
+.memory-eval p {
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0;
+}
+
 .memory-answer {
   border-top: 1px solid #edf1f7;
   margin-top: 14px;
