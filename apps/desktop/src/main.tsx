@@ -57,6 +57,34 @@ type DataDocument = {
   chunkCount: number;
 };
 
+type DataSearchResult = {
+  chunk: {
+    id: string;
+    content: string;
+  };
+  document: {
+    id: string;
+    title: string;
+    sourceType: string;
+    sourceUri?: string;
+  };
+  dataset: {
+    id: string;
+    name: string;
+  };
+  distance: number;
+};
+
+type MemoryAnswer = {
+  query: string;
+  provider: string;
+  model: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  answer: string;
+  results: DataSearchResult[];
+};
+
 type SystemProfile = {
   workspaceRoot: string;
   datasetName: string;
@@ -107,6 +135,8 @@ function App() {
   const [documents, setDocuments] = useState<DataDocument[]>([]);
   const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
   const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
+  const [memoryQuestion, setMemoryQuestion] = useState("What does this workspace contain?");
+  const [memoryAnswer, setMemoryAnswer] = useState<MemoryAnswer | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
   const [openaiApiKey, setOpenaiApiKey] = useState("");
@@ -252,6 +282,54 @@ function App() {
               <p className="muted">
                 Last scan: {scanResult.scannedFiles} files checked, {scanResult.skippedFiles} skipped.
               </p>
+            ) : null}
+
+            <div className="section-heading compact-heading">
+              <h2>Ask Memory</h2>
+            </div>
+            <label>
+              Question
+              <textarea
+                value={memoryQuestion}
+                onChange={(event) => setMemoryQuestion(event.target.value)}
+              />
+            </label>
+            <button
+              disabled={busy || !memoryQuestion.trim()}
+              onClick={() =>
+                void runAction(async () => {
+                  const answer = await apiPost<MemoryAnswer>("/memory/answer", {
+                    query: memoryQuestion,
+                    limit: 5,
+                  });
+                  setMemoryAnswer(answer);
+                  setMessage(
+                    `Memory answer generated from ${answer.results.length} stored chunks.`,
+                  );
+                  return selectedRunId || undefined;
+                })
+              }
+            >
+              Ask Stored Memory
+            </button>
+            {memoryAnswer ? (
+              <section className="memory-answer">
+                <p>{memoryAnswer.answer}</p>
+                <p className="muted">
+                  Model: {memoryAnswer.model} | Embeddings: {memoryAnswer.embeddingModel}
+                </p>
+                {memoryAnswer.results.map((result, index) => (
+                  <div className="memory-source" key={result.chunk.id}>
+                    <strong>
+                      [{index + 1}] {result.document.title}
+                    </strong>
+                    <span>
+                      {result.dataset.name} | distance {result.distance.toFixed(4)}
+                    </span>
+                    <p>{result.chunk.content}</p>
+                  </div>
+                ))}
+              </section>
             ) : null}
 
             <div className="section-heading compact-heading">

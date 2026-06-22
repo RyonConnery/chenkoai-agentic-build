@@ -215,12 +215,24 @@ export class PostgresDataStore implements DataStore {
 
   async searchChunks(input: {
     embedding: number[];
+    embeddingModel?: string;
     datasetId?: string;
     limit: number;
   }): Promise<DataSearchResult[]> {
-    const params: Array<string | number> = input.datasetId
-      ? [toVector(input.embedding), input.datasetId, input.limit]
-      : [toVector(input.embedding), input.limit];
+    const params: Array<string | number> = [toVector(input.embedding)];
+    const filters = ["c.embedding is not null"];
+
+    if (input.embeddingModel) {
+      params.push(input.embeddingModel);
+      filters.push(`c.embedding_model = $${params.length}`);
+    }
+
+    if (input.datasetId) {
+      params.push(input.datasetId);
+      filters.push(`c.dataset_id = $${params.length}`);
+    }
+
+    params.push(input.limit);
     const result = await this.#pool.query<ChunkSearchRow>(
       `select c.id, c.document_id, c.dataset_id, c.chunk_index, c.content,
               c.token_estimate, c.metadata, c.created_at, c.embedding_model,
@@ -231,10 +243,9 @@ export class PostgresDataStore implements DataStore {
        from data_chunks c
        join data_documents d on d.id = c.document_id
        join data_datasets ds on ds.id = c.dataset_id
-       where c.embedding is not null
-       ${input.datasetId ? "and c.dataset_id = $2" : ""}
+       where ${filters.join(" and ")}
        order by c.embedding <=> $1::vector
-       limit $${input.datasetId ? 3 : 2}`,
+       limit $${params.length}`,
       params,
     );
 

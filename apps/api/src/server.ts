@@ -208,6 +208,7 @@ server.post<{ Body: DataSearchRequest }>("/data/search", async (request) => {
   const response = await embeddingProvider.embed(searchRequest.query);
   const results = await dataStore.searchChunks({
     embedding: response.embedding,
+    embeddingModel: response.model,
     datasetId: searchRequest.datasetId,
     limit: searchRequest.limit,
   });
@@ -215,6 +216,44 @@ server.post<{ Body: DataSearchRequest }>("/data/search", async (request) => {
   return {
     provider: response.provider,
     model: response.model,
+    results,
+  };
+});
+
+server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
+  const searchRequest = normalizeDataSearchRequest(request.body);
+  const embedding = await embeddingProvider.embed(searchRequest.query);
+  const results = await dataStore.searchChunks({
+    embedding: embedding.embedding,
+    embeddingModel: embedding.model,
+    datasetId: searchRequest.datasetId,
+    limit: searchRequest.limit,
+  });
+  const context = formatAnswerContext(results);
+  const generated = await modelProvider.generate({
+    systemPrompt: [
+      "You are ChenkoAI's memory analyst.",
+      "Answer using only the provided memory context.",
+      "When you use a source, cite it with bracket numbers like [1].",
+      "If the memory context does not contain enough evidence, say what is missing.",
+    ].join(" "),
+    prompt: [
+      `Question: ${searchRequest.query}`,
+      "",
+      "Memory context:",
+      context || "No matching memory chunks were found.",
+    ].join("\n"),
+    temperature: 0.1,
+    maxTokens: 768,
+  });
+
+  return {
+    query: searchRequest.query,
+    provider: generated.provider,
+    model: generated.model,
+    embeddingProvider: embedding.provider,
+    embeddingModel: embedding.model,
+    answer: generated.text,
     results,
   };
 });
@@ -400,6 +439,22 @@ function createDynamicEmbeddingProviderAdapter(): EmbeddingProviderAdapter {
       return await createEmbeddingProviderAdapter().embed(input);
     },
   };
+}
+
+function formatAnswerContext(results: Awaited<ReturnType<typeof dataStore.searchChunks>>): string {
+  return results
+    .map((result, index) =>
+      [
+        `[${index + 1}] ${result.document.title}`,
+        `Dataset: ${result.dataset.name}`,
+        result.document.sourceUri ? `Source: ${result.document.sourceUri}` : undefined,
+        `Distance: ${result.distance.toFixed(4)}`,
+        result.chunk.content,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n");
 }
 
 async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {

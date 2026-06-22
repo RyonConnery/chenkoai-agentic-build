@@ -246,6 +246,33 @@ textarea {
   margin: 12px 0;
 }
 
+.memory-answer {
+  border-top: 1px solid #edf1f7;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.memory-source {
+  border-bottom: 1px solid #edf1f7;
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+}
+
+.memory-source span {
+  color: #66738a;
+  font-size: 12px;
+}
+
+.memory-source p {
+  color: #3b465a;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0;
+  max-height: 96px;
+  overflow: auto;
+}
+
 .settings-form {
   border-bottom: 1px solid #edf1f7;
   margin-bottom: 18px;

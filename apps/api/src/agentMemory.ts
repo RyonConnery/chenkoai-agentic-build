@@ -26,6 +26,7 @@ export class AgentMemoryRetriever {
     const embedding = await this.#embeddingProvider.embed(query);
     const results = await this.#dataStore.searchChunks({
       embedding: embedding.embedding,
+      embeddingModel: embedding.model,
       limit: this.#limit,
     });
 

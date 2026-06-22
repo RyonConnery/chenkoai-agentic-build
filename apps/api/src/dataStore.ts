@@ -27,6 +27,7 @@ export interface DataStore {
   saveChunkEmbedding(chunkId: string, embedding: number[], model: string): Promise<void>;
   searchChunks(input: {
     embedding: number[];
+    embeddingModel?: string;
     datasetId?: string;
     limit: number;
   }): Promise<DataSearchResult[]>;
@@ -116,6 +117,7 @@ export class InMemoryDataStore implements DataStore {
 
   async searchChunks(input: {
     embedding: number[];
+    embeddingModel?: string;
     datasetId?: string;
     limit: number;
   }): Promise<DataSearchResult[]> {
@@ -123,6 +125,9 @@ export class InMemoryDataStore implements DataStore {
 
     for (const chunk of this.#allChunks()) {
       if (input.datasetId && chunk.datasetId !== input.datasetId) {
+        continue;
+      }
+      if (input.embeddingModel && chunk.embeddingModel !== input.embeddingModel) {
         continue;
       }
 
