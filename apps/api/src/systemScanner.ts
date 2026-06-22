@@ -40,6 +40,18 @@ const ignoredDirectoryNames = new Set([
   "__pycache__",
 ]);
 
+const overviewFileCandidates = [
+  "README.md",
+  "docs\\architecture.md",
+  "docs\\roadmap.md",
+  "docs\\data-ingestion.md",
+  "docs\\desktop-control-center.md",
+  "docs\\model-provider.md",
+  "package.json",
+  "Cargo.toml",
+  "infra\\docker-compose.yml",
+];
+
 export type SystemScanResult = {
   datasetName: string;
   workspaceRoot: string;
@@ -75,9 +87,28 @@ export class SystemScanner {
   async scan(input: { maxFiles?: number; maxFileBytes?: number } = {}): Promise<SystemScanResult> {
     const maxFiles = clamp(input.maxFiles ?? 80, 1, 500);
     const maxFileBytes = clamp(input.maxFileBytes ?? 120_000, 1_000, 1_000_000);
-    const files = await this.#collectFiles(".", maxFiles);
+    const files = (await this.#collectFiles(".", Math.min(maxFiles * 4, 2_000)))
+      .sort(compareFilePriority)
+      .slice(0, maxFiles);
     let ingestedDocuments = 0;
     let skippedFiles = 0;
+
+    const overview = await this.#createWorkspaceOverview();
+    if (overview) {
+      await this.#dataStore.ingestText({
+        datasetName: "chenkoai-system-scan",
+        title: "ChenkoAI Workspace Overview",
+        sourceType: "manual",
+        sourceUri: "chenkoai://workspace-overview",
+        text: overview,
+        metadata: {
+          generated: true,
+          kind: "workspace-overview",
+          scannedAt: new Date().toISOString(),
+        },
+      });
+      ingestedDocuments += 1;
+    }
 
     for (const file of files) {
       const absolutePath = path.join(this.#workspaceRoot, file);
@@ -161,8 +192,94 @@ export class SystemScanner {
 
     return results;
   }
+
+  async #createWorkspaceOverview(): Promise<string> {
+    const sections: string[] = [];
+
+    for (const file of overviewFileCandidates) {
+      const normalized = path.normalize(file);
+      const absolutePath = path.join(this.#workspaceRoot, normalized);
+
+      try {
+        const stat = await fs.stat(absolutePath);
+        if (!stat.isFile() || stat.size > 80_000) {
+          continue;
+        }
+
+        const text = await fs.readFile(absolutePath, "utf8");
+        sections.push([`## ${normalized}`, text.slice(0, 6_000).trim()].join("\n\n"));
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (sections.length === 0) {
+      return "";
+    }
+
+    return [
+      "# ChenkoAI Workspace Overview",
+      "This generated memory document summarizes high-signal project files for workspace-level questions.",
+      currentCapabilitySummary(),
+      ...sections,
+    ].join("\n\n");
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function compareFilePriority(left: string, right: string): number {
+  return filePriority(right) - filePriority(left) || left.localeCompare(right);
+}
+
+function filePriority(file: string): number {
+  const normalized = file.replace(/\\/g, "/").toLowerCase();
+  let score = 0;
+
+  if (normalized === "readme.md") {
+    score += 1_000;
+  }
+  if (normalized.startsWith("docs/")) {
+    score += 800;
+  }
+  if (normalized.endsWith("package.json") || normalized.endsWith("cargo.toml")) {
+    score += 500;
+  }
+  if (normalized.startsWith("apps/api/") || normalized.startsWith("packages/agent-core/")) {
+    score += 350;
+  }
+  if (normalized.startsWith("apps/desktop/")) {
+    score += 250;
+  }
+  if (normalized.startsWith("infra/") || normalized.startsWith("scripts/")) {
+    score += 200;
+  }
+  if (normalized.includes(".example") || normalized.endsWith(".env")) {
+    score -= 200;
+  }
+
+  return score;
+}
+
+function currentCapabilitySummary(): string {
+  return [
+    "## Current Implemented Capabilities",
+    "- Desktop control center built with Tauri and React.",
+    "- Hidden local TypeScript API launched by the desktop shell.",
+    "- Local Ollama model provider support through `local-http`.",
+    "- Local embedding provider support through `nomic-embed-text`.",
+    "- PostgreSQL durable storage for datasets, documents, chunks, agent runs, prompt templates, and tool permission requests.",
+    "- pgvector-backed semantic chunk search.",
+    "- Workspace scanner that ingests source, docs, config, scripts, and generated workspace overview memory.",
+    "- Persistent Ask Memory workflow that retrieves stored chunks and answers with local model output plus source chunks.",
+    "- Agent run lifecycle with planning, auto-run, progress reports, and run events.",
+    "- Prompt registry with version activation.",
+    "- Local tool permission queue for safe workspace tools.",
+  ].join("\n");
 }
