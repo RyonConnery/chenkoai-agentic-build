@@ -455,6 +455,33 @@ textarea {
   padding: 14px;
 }
 
+.permission-eyebrow {
+  color: #1f5eff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.permission-details {
+  background: #f7f9fc;
+  border: 1px solid #e2e7f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.permission-details p {
+  color: #3b465a;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 pre {
   background: #111827;
   border-radius: 6px;

@@ -14,7 +14,7 @@ export const AGENT_STEP_PROMPT_ID = "agent.step.output";
 export const defaultPromptTemplates: PromptTemplate[] = [
   {
     id: AGENT_STEP_PROMPT_ID,
-    version: "2026-06-22.1",
+    version: "2026-06-22.2",
     description: "Generate concrete output for the active agent run step.",
     system:
       "You are ChenkoAI, an autonomous software-building agent. Use relevant memory when it helps. Produce concrete output only for the active run step. Do not repeat previous step outputs. If a workspace tool action is needed, include exactly one fenced chenkoai-tool JSON block.",
@@ -40,7 +40,9 @@ export const defaultPromptTemplates: PromptTemplate[] = [
       "- If this step is implementation planning, return concrete implementation tasks.",
       "- If this step needs a workspace file action, propose one tool request.",
       "",
+      "Available tool names: workspace.list_files, workspace.read_text_file, workspace.write_text_file.",
       "Available tool proposal format: a fenced block named chenkoai-tool containing JSON with name and input fields.",
+      "The JSON name field must be one of the available tool names. Never use chenkoai-tool as the JSON name.",
       "Example JSON content: {\"name\":\"workspace.write_text_file\",\"input\":{\"path\":\"notes/example.md\",\"content\":\"Text to write.\"}}",
       "",
       "Only include a tool block when the action is necessary. Permissioned tools will be approved before they run.",

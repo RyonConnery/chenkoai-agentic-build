@@ -1,5 +1,5 @@
 import type { AgentRunSnapshot, AgentRunStep } from "@chenkoai/agent-core";
-import { extractToolRequest } from "./agentActionProposal.js";
+import { extractToolRequest, stripToolRequestBlocks } from "./agentActionProposal.js";
 import type { AgentMemoryRetriever } from "./agentMemory.js";
 import type { AgentRunStore } from "./agentRunStore.js";
 import type { AgentToolExecutor } from "./agentToolExecutor.js";
@@ -78,9 +78,10 @@ export class AgentRuntime {
 
 function formatStepDetails(memoryContext: string, generatedText: string): string {
   const memorySummary = summarizeMemoryContext(memoryContext);
+  const displayText = stripToolRequestBlocks(generatedText);
   return [
     memorySummary ? ["Memory used:", memorySummary].join("\n") : undefined,
-    ["Agent output:", generatedText].join("\n"),
+    ["Agent output:", displayText || "Tool action proposed for approval."].join("\n"),
   ]
     .filter(Boolean)
     .join("\n\n");

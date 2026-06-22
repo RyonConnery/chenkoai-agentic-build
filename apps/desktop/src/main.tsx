@@ -748,12 +748,21 @@ function PermissionCard({
   onDecision: (approved: boolean) => Promise<void>;
   permission: PermissionRequest;
 }) {
+  const action = describePermission(permission);
+
   return (
     <div className="permission-card">
       <div>
-        <strong>{permission.toolName}</strong>
-        <p>{permission.reason}</p>
-        <pre>{JSON.stringify(permission.input, undefined, 2)}</pre>
+        <p className="permission-eyebrow">Proposed Action</p>
+        <strong>{action.title}</strong>
+        <p>{action.description}</p>
+        {action.details.length > 0 ? (
+          <div className="permission-details">
+            {action.details.map((detail) => (
+              <p key={detail}>{detail}</p>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div className="button-row">
         <button disabled={disabled} onClick={() => void onDecision(true)}>
@@ -765,6 +774,47 @@ function PermissionCard({
       </div>
     </div>
   );
+}
+
+function describePermission(permission: PermissionRequest): {
+  title: string;
+  description: string;
+  details: string[];
+} {
+  const path = typeof permission.input.path === "string" ? permission.input.path : undefined;
+  const content = typeof permission.input.content === "string" ? permission.input.content : undefined;
+
+  if (permission.toolName === "workspace.write_text_file") {
+    return {
+      title: path ? `Write file: ${path}` : "Write workspace file",
+      description: "ChenkoAI wants approval before creating or changing a file.",
+      details: [
+        content ? `Content preview: ${content.slice(0, 180)}${content.length > 180 ? "..." : ""}` : "",
+      ].filter(Boolean),
+    };
+  }
+
+  if (permission.toolName === "workspace.read_text_file") {
+    return {
+      title: path ? `Read file: ${path}` : "Read workspace file",
+      description: "ChenkoAI wants to inspect a workspace file before continuing.",
+      details: [],
+    };
+  }
+
+  if (permission.toolName === "workspace.list_files") {
+    return {
+      title: "List workspace files",
+      description: "ChenkoAI wants to list files in the workspace.",
+      details: path ? [`Path: ${path}`] : [],
+    };
+  }
+
+  return {
+    title: permission.toolName,
+    description: permission.reason,
+    details: [JSON.stringify(permission.input)],
+  };
 }
 
 function StepDetails({ details }: { details: string }) {
