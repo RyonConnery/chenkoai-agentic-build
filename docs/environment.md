@@ -28,6 +28,8 @@ Use `MODEL_PROVIDER=openai-compatible` with `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
 
 Use `MODEL_PROVIDER=local-http` with `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_MODEL`.
 
+The desktop app can save these local settings to `.env.chenkoai.local`. This file is intentionally ignored by Git because it may contain API keys.
+
 ## Embedding Provider
 
 `EMBEDDING_PROVIDER=mock` is the default for local development and does not require network access.

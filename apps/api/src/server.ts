@@ -20,6 +20,11 @@ import { AgentRunReporter } from "./agentRunReporter.js";
 import { createAgentRunStore } from "./agentRunPersistence.js";
 import { AgentRuntime } from "./agentRuntime.js";
 import { AgentToolExecutor } from "./agentToolExecutor.js";
+import {
+  readModelSettings,
+  saveModelSettings,
+  type ModelSettingsMutation,
+} from "./appSettings.js";
 import { createDataStore } from "./dataPersistence.js";
 import { createEmbeddingProviderAdapter } from "./embeddingProvider.js";
 import { LocalToolRegistry } from "./localTools.js";
@@ -75,6 +80,16 @@ server.get("/model/provider", async () => ({
 server.get("/embeddings/provider", async () => ({
   provider: embeddingProvider.provider,
 }));
+
+server.get("/settings/model", async () => readModelSettings());
+
+server.post<{ Body: ModelSettingsMutation }>("/settings/model", async (request, reply) => {
+  const settings = await saveModelSettings(request.body ?? {});
+  return reply.code(201).send({
+    ...settings,
+    restartRequired: true,
+  });
+});
 
 server.get("/system/profile", async () => systemScanner.profile());
 

@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
+    collections::HashMap,
+    fs,
+    io::{BufRead, BufReader},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -59,9 +62,13 @@ fn start_local_api() -> Option<Child> {
         .env("CHENKOAI_WORKSPACE_ROOT", workspace_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()
+        .stderr(Stdio::null());
+
+    for (key, value) in read_local_env_file() {
+        command.env(key, value);
+    }
+
+    command.spawn().ok()
 }
 
 fn project_root() -> PathBuf {
@@ -71,4 +78,27 @@ fn project_root() -> PathBuf {
         .and_then(|path| path.parent())
         .expect("src-tauri must live under apps/desktop")
         .to_path_buf()
+}
+
+fn read_local_env_file() -> HashMap<String, String> {
+    let path = project_root().join(".env.chenkoai.local");
+    let Ok(file) = fs::File::open(path) else {
+        return HashMap::new();
+    };
+
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| parse_env_line(&line))
+        .collect()
+}
+
+fn parse_env_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    let (key, value) = trimmed.split_once('=')?;
+    Some((key.trim().to_string(), value.trim().to_string()))
 }

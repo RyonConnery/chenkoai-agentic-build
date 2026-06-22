@@ -72,6 +72,19 @@ type SystemScanResult = {
   truncated: boolean;
 };
 
+type ModelSettings = {
+  provider: string;
+  embeddingProvider: string;
+  openaiBaseUrl: string;
+  openaiModel: string;
+  openaiEmbeddingModel: string;
+  localBaseUrl: string;
+  localModel: string;
+  localEmbeddingModel: string;
+  hasOpenAiApiKey: boolean;
+  configPath: string;
+};
+
 type ApiState = "checking" | "online" | "offline";
 
 function App() {
@@ -83,6 +96,8 @@ function App() {
   const [documents, setDocuments] = useState<DataDocument[]>([]);
   const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
   const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
+  const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [report, setReport] = useState<RunReport | undefined>();
   const [goal, setGoal] = useState("Build the next ChenkoAI capability");
@@ -99,10 +114,19 @@ function App() {
 
   async function refresh(nextRunId = selectedRunId): Promise<void> {
     try {
-      const [health, modelPayload, profilePayload, runPayload, permissionPayload, datasetPayload, documentPayload] =
-        await Promise.all([
+      const [
+        health,
+        modelPayload,
+        settingsPayload,
+        profilePayload,
+        runPayload,
+        permissionPayload,
+        datasetPayload,
+        documentPayload,
+      ] = await Promise.all([
         apiGet<{ ok: boolean }>("/health"),
         apiGet<{ provider: string }>("/model/provider"),
+        apiGet<ModelSettings>("/settings/model"),
         apiGet<SystemProfile>("/system/profile"),
         apiGet<{ runs: RunListItem[] }>("/agent/runs"),
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
@@ -116,6 +140,7 @@ function App() {
 
       setApiState("online");
       setModelProvider(modelPayload.provider);
+      setModelSettings(settingsPayload);
       setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
       setPermissions(permissionPayload.permissions);
@@ -128,6 +153,7 @@ function App() {
     } catch {
       setApiState("offline");
       setModelProvider("unknown");
+      setModelSettings(undefined);
       setSystemProfile(undefined);
       setReport(undefined);
     }
@@ -376,6 +402,90 @@ function App() {
           </section>
 
           <aside className="side-panel">
+            <h2>Model Settings</h2>
+            {modelSettings ? (
+              <div className="settings-form">
+                <label>
+                  Model provider
+                  <select
+                    value={modelSettings.provider}
+                    onChange={(event) =>
+                      setModelSettings({ ...modelSettings, provider: event.target.value })
+                    }
+                  >
+                    <option value="mock">Mock</option>
+                    <option value="openai-compatible">OpenAI compatible</option>
+                    <option value="local-http">Local HTTP</option>
+                  </select>
+                </label>
+                <label>
+                  Embedding provider
+                  <select
+                    value={modelSettings.embeddingProvider}
+                    onChange={(event) =>
+                      setModelSettings({
+                        ...modelSettings,
+                        embeddingProvider: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="mock">Mock</option>
+                    <option value="openai-compatible">OpenAI compatible</option>
+                    <option value="local-http">Local HTTP</option>
+                  </select>
+                </label>
+                <label>
+                  OpenAI API key
+                  <input
+                    placeholder={modelSettings.hasOpenAiApiKey ? "Saved" : "Not saved"}
+                    type="password"
+                    value={openaiApiKey}
+                    onChange={(event) => setOpenaiApiKey(event.target.value)}
+                  />
+                </label>
+                <label>
+                  OpenAI model
+                  <input
+                    value={modelSettings.openaiModel}
+                    onChange={(event) =>
+                      setModelSettings({ ...modelSettings, openaiModel: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Local model
+                  <input
+                    value={modelSettings.localModel}
+                    onChange={(event) =>
+                      setModelSettings({ ...modelSettings, localModel: event.target.value })
+                    }
+                  />
+                </label>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(async () => {
+                      const saved = await apiPost<ModelSettings & { restartRequired: boolean }>(
+                        "/settings/model",
+                        {
+                          ...modelSettings,
+                          openaiApiKey,
+                        },
+                      );
+                      setModelSettings(saved);
+                      setOpenaiApiKey("");
+                      setMessage("Model settings saved. Restart the app to use the new provider.");
+                      return selectedRunId || undefined;
+                    })
+                  }
+                >
+                  Save Settings
+                </button>
+                <p className="muted">Provider changes apply after restarting ChenkoAI.</p>
+              </div>
+            ) : (
+              <p className="muted">Settings unavailable.</p>
+            )}
             <h2>Knowledge Base</h2>
             {documents.length === 0 ? (
               <p className="muted">No scanned documents yet.</p>
