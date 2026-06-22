@@ -314,7 +314,7 @@ function App() {
             </button>
             {memoryAnswer ? (
               <section className="memory-answer">
-                <p className="memory-answer-text">{memoryAnswer.answer}</p>
+                <div className="memory-answer-text">{renderMemoryAnswer(memoryAnswer.answer)}</div>
                 <p className="muted">
                   Model: {memoryAnswer.model} | Embeddings: {memoryAnswer.embeddingModel}
                 </p>
@@ -738,6 +738,24 @@ function PermissionCard({
       </div>
     </div>
   );
+}
+
+function renderMemoryAnswer(answer: string): React.ReactNode[] {
+  return answer
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const heading = line.replace(/^#{1,6}\s*/, "");
+      if (line.startsWith("#")) {
+        return <h3 key={`${index}-${line}`}>{heading}</h3>;
+      }
+      if (line.startsWith("- ")) {
+        return <p className="memory-answer-bullet" key={`${index}-${line}`}>{line.slice(2)}</p>;
+      }
+
+      return <p key={`${index}-${line}`}>{line}</p>;
+    });
 }
 
 async function apiGet<T>(path: string): Promise<T> {

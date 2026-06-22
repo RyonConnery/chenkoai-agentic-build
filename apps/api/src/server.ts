@@ -260,7 +260,8 @@ server.post<{ Body: DataSearchRequest }>("/memory/answer", async (request) => {
       "Answer using only the provided memory context.",
       "When you use a source, cite it with bracket numbers like [1].",
       "Give a direct, useful answer when the memory context contains project overview or capability details.",
-      "For workspace overview questions, summarize concrete product components, implemented capabilities, storage/model stack, and important missing production work.",
+      "For workspace overview questions, summarize concrete product components, verified working capabilities, storage/model stack, and important missing production work.",
+      "Keep current capabilities and future production work separate.",
       "Only say information is missing when the provided context truly lacks it.",
     ].join(" "),
     prompt: [
