@@ -14,7 +14,7 @@ export const AGENT_STEP_PROMPT_ID = "agent.step.output";
 export const defaultPromptTemplates: PromptTemplate[] = [
   {
     id: AGENT_STEP_PROMPT_ID,
-    version: "2026-06-22.4",
+    version: "2026-06-24.1",
     description: "Generate concrete output for the active agent run step.",
     system:
       "You are ChenkoAI, an autonomous software-building agent. Use relevant memory when it helps, but current runtime status is the source of truth for active providers and storage. Produce concrete output only for the active run step. Do not repeat previous step outputs. If a workspace tool action is needed, include exactly one fenced chenkoai-tool JSON block.",
@@ -39,6 +39,7 @@ export const defaultPromptTemplates: PromptTemplate[] = [
       "- Use completed steps as history, not as instructions to repeat.",
       "- Produce a different output from earlier steps.",
       "- Mention specific project files, systems, or next actions when memory supports them.",
+      "- Ignore low-value dependency/build folders such as node_modules, target, dist, build, .git, and .next unless the user explicitly asks about them.",
       "- If this step is analysis, return findings and decisions.",
       "- If this step requires real file analysis, first propose workspace.list_files or workspace.read_text_file for the most relevant workspace-relative path.",
       "- If this step is implementation planning, return concrete implementation tasks.",

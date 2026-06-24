@@ -74,13 +74,20 @@ function summarizeToolOutput(value: unknown): string | undefined {
   const output = value as {
     path?: unknown;
     entries?: unknown;
+    ignoredEntries?: unknown;
+    summary?: unknown;
     truncated?: unknown;
     content?: unknown;
     bytesWritten?: unknown;
   };
 
+  if (typeof output.summary === "string") {
+    return output.summary;
+  }
+
   if (Array.isArray(output.entries)) {
-    return `Listed ${output.entries.length} entries in ${String(output.path ?? ".")}.`;
+    const ignored = Array.isArray(output.ignoredEntries) ? output.ignoredEntries.length : 0;
+    return `Listed ${output.entries.length} relevant entries in ${String(output.path ?? ".")}${ignored > 0 ? ` and ignored ${ignored} low-value or sensitive entries` : ""}.`;
   }
 
   if (typeof output.content === "string") {

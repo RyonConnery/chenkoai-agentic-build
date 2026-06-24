@@ -34,6 +34,32 @@ const textFileExtensions = new Set([
   ".yaml",
 ]);
 
+const lowValueDirectoryNames = new Set([
+  ".git",
+  ".next",
+  ".tauri",
+  "build",
+  "dist",
+  "node_modules",
+  "out",
+  "target",
+  "__pycache__",
+]);
+
+const highValueEntryNames = new Set([
+  "apps",
+  "crates",
+  "docs",
+  "infra",
+  "packages",
+  "scripts",
+  "services",
+  "README.md",
+  "package.json",
+  "Cargo.toml",
+  "tsconfig.base.json",
+]);
+
 export class LocalToolRegistry {
   readonly #workspaceRoot: string;
   readonly #permissionStore: ToolPermissionStore;
@@ -155,16 +181,35 @@ export class LocalToolRegistry {
   async #listFiles(relativePath: string): Promise<unknown> {
     const target = this.#resolveWorkspacePath(relativePath);
     const entries = await fs.readdir(target, { withFileTypes: true });
+    const allEntries = entries
+      .map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? "directory" : "file",
+        ignored:
+          (entry.isDirectory() && lowValueDirectoryNames.has(entry.name)) ||
+          (entry.isFile() && isSensitiveEnvFile(entry.name)),
+        reason: entry.isDirectory()
+          ? "dependency/build/internal directory"
+          : "sensitive local environment file",
+        priority: highValueEntryNames.has(entry.name) ? 0 : entry.isDirectory() ? 1 : 2,
+      }))
+      .sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+    const visibleEntries = allEntries
+      .filter((entry) => !entry.ignored)
+      .map(({ name, type }) => ({ name, type }));
+    const ignoredEntries = allEntries
+      .filter((entry) => entry.ignored)
+      .map(({ name, type, reason }) => ({ name, type, reason }));
 
     return {
       workspaceRoot: this.#workspaceRoot,
       path: toWorkspaceRelativePath(this.#workspaceRoot, target),
-      entries: entries
-        .map((entry) => ({
-          name: entry.name,
-          type: entry.isDirectory() ? "directory" : "file",
-        }))
-        .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name)),
+      entries: visibleEntries,
+      ignoredEntries,
+      summary:
+        ignoredEntries.length > 0
+          ? `Listed ${visibleEntries.length} relevant entries and ignored ${ignoredEntries.length} low-value or sensitive entries.`
+          : `Listed ${visibleEntries.length} relevant entries.`,
     };
   }
 
@@ -173,6 +218,10 @@ export class LocalToolRegistry {
     const stat = await fs.stat(target);
     if (!stat.isFile()) {
       throw new Error("Target is not a file");
+    }
+
+    if (isSensitiveEnvFile(path.basename(target))) {
+      throw new Error("Refusing to read sensitive local environment files");
     }
 
     const extension = path.extname(target).toLowerCase();
@@ -269,6 +318,11 @@ export class LocalToolRegistry {
   }
 
   #normalizeWorkspacePath(inputPath: string): string {
+    const trimmed = inputPath.trim();
+    if (["", ".", "/", "\\", "root", "workspace root", "current directory"].includes(trimmed.toLowerCase())) {
+      return ".";
+    }
+
     if (!path.isAbsolute(inputPath)) {
       return inputPath;
     }
@@ -305,4 +359,9 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
 function toWorkspaceRelativePath(workspaceRoot: string, target: string): string {
   const relative = path.relative(workspaceRoot, target);
   return relative || ".";
+}
+
+function isSensitiveEnvFile(fileName: string): boolean {
+  const normalized = fileName.toLowerCase();
+  return normalized.startsWith(".env") && !normalized.includes("example");
 }

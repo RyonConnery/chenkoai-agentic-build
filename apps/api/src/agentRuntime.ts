@@ -112,6 +112,10 @@ export class AgentRuntime {
       systemPrompt: [
         "You are ChenkoAI, an autonomous software-building agent.",
         "Analyze the tool result for the active step and produce useful conclusions.",
+        "For workspace listings, focus on source, docs, config, services, packages, crates, scripts, and infrastructure.",
+        "Treat dependency/build/internal directories as ignored context unless the user specifically asks about them.",
+        "Do not name ignored files or folders; mention only ignored counts or reason categories.",
+        "Do not recommend investigating ignored entries unless the user explicitly asks about ignored or hidden entries.",
         "Do not include raw code dumps or JSON blocks.",
         "Do not propose another tool request in this response.",
       ].join(" "),
@@ -180,6 +184,31 @@ function findNewlyStartedStep(
 }
 
 function summarizeToolResultForModel(result: ToolExecutionResult): string {
+  if (result.name === "workspace.list_files" && isRecord(result.output)) {
+    const ignoredEntries = Array.isArray(result.output.ignoredEntries)
+      ? result.output.ignoredEntries.filter(isRecord)
+      : [];
+    return JSON.stringify(
+      {
+        name: result.name,
+        ok: result.ok,
+        path: result.output.path,
+        summary: result.output.summary,
+        relevantEntries: result.output.entries,
+        ignoredEntryCount: ignoredEntries.length,
+        ignoredReasonCategories: [
+          ...new Set(
+            ignoredEntries
+              .map((entry) => entry.reason)
+              .filter((reason): reason is string => typeof reason === "string"),
+          ),
+        ],
+      },
+      undefined,
+      2,
+    ).slice(0, 12_000);
+  }
+
   return JSON.stringify(
     {
       name: result.name,
@@ -190,4 +219,8 @@ function summarizeToolResultForModel(result: ToolExecutionResult): string {
     undefined,
     2,
   ).slice(0, 16_000);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
