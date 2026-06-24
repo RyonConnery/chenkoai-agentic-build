@@ -128,6 +128,7 @@ export class LocalToolRegistry {
     const request = normalizeToolExecuteRequest(input);
 
     try {
+      validateToolInput(request);
       const permissionResult = await this.#ensurePermission(request);
       if (permissionResult) {
         return permissionResult;
@@ -354,6 +355,18 @@ function readString(value: unknown, fallback?: string): string {
   }
 
   throw new Error("Expected a non-empty string input");
+}
+
+function validateToolInput(request: ReturnType<typeof normalizeToolExecuteRequest>): void {
+  if (request.name === "workspace.write_text_file") {
+    readString(request.input.path);
+    readString(request.input.content);
+    return;
+  }
+
+  if (request.name === "workspace.read_text_file") {
+    readString(request.input.path);
+  }
 }
 
 function readNumber(value: unknown, fallback: number): number {

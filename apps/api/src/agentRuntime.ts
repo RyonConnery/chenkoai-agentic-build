@@ -62,6 +62,15 @@ export class AgentRuntime {
       },
     );
 
+    const deterministicVerification = await this.#tryDeterministicVerificationStep({
+      snapshot: advanced,
+      step: startedStep,
+      memoryContext,
+    });
+    if (deterministicVerification) {
+      return deterministicVerification;
+    }
+
     const generated = await this.#modelProvider.generate({
       systemPrompt: prompt.systemPrompt,
       prompt: prompt.prompt,
@@ -111,6 +120,61 @@ export class AgentRuntime {
 
     const toolExecution = await this.#toolExecutor.executeApprovedPermission(runId, permission);
     return toolExecution.snapshot ?? (await this.#store.getSnapshot(runId));
+  }
+
+  async #tryDeterministicVerificationStep(input: {
+    snapshot: AgentRunSnapshot;
+    step: AgentRunStep;
+    memoryContext: string;
+  }): Promise<AgentRunSnapshot | undefined> {
+    if (!this.#toolExecutor || !isVerificationStep(input.step.title)) {
+      return undefined;
+    }
+
+    const pathToVerify = findLastSuccessfulWritePath(input.snapshot);
+    if (!pathToVerify) {
+      return undefined;
+    }
+
+    const updated = await this.#store.updateStepDetails(
+      input.snapshot.run.id,
+      input.step.id,
+      [
+        input.memoryContext === "None"
+          ? undefined
+          : ["Memory used:", summarizeMemoryContext(input.memoryContext)].join("\n"),
+        [
+          "Agent output:",
+          `Verifying the approved workspace change by reading ${pathToVerify}.`,
+        ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    );
+
+    const toolExecution = await this.#toolExecutor.execute(input.snapshot.run.id, {
+      name: "workspace.read_text_file",
+      input: {
+        path: pathToVerify,
+        maxCharacters: 4000,
+      },
+    });
+
+    const toolUpdated = toolExecution.snapshot ?? updated;
+    if (!toolExecution.tool.ok) {
+      return toolUpdated;
+    }
+
+    return (
+      await this.#store.appendStepDetails(
+        input.snapshot.run.id,
+        input.step.id,
+        [
+          "Verification result:",
+          `Read ${pathToVerify} successfully. The approved workspace file is present and accessible.`,
+        ].join("\n"),
+      )
+    ) ?? toolUpdated;
   }
 
   async #createToolInformedAnalysis(input: {
@@ -235,4 +299,31 @@ function summarizeToolResultForModel(result: ToolExecutionResult): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isVerificationStep(title: string): boolean {
+  return /\b(confirm|verify|validate|check)\b/i.test(title);
+}
+
+function findLastSuccessfulWritePath(snapshot: AgentRunSnapshot): string | undefined {
+  const completedDetails = snapshot.run.steps
+    .filter((step) => step.status === "completed" || step.index < snapshot.run.steps.length)
+    .map((step) => step.details ?? "")
+    .join("\n");
+  const patterns = [
+    /Wrote\s+\d+\s+bytes\s+to\s+([^\n.]+(?:\.[A-Za-z0-9]+))/gi,
+    /Verified\s+([^\n]+?)\s+already had the approved content/gi,
+  ];
+
+  let found: string | undefined;
+  for (const pattern of patterns) {
+    for (const match of completedDetails.matchAll(pattern)) {
+      const path = match[1]?.trim();
+      if (path) {
+        found = path.replace(/\\/g, "/");
+      }
+    }
+  }
+
+  return found;
 }
