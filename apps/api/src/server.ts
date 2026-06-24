@@ -46,7 +46,7 @@ import { createToolPermissionStore } from "./toolPermissionPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 await loadLocalSettingsIntoEnv();
-await fallBackToMemoryIfPostgresIsUnavailable();
+await connectPostgresOrFallBackToMemory();
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
@@ -91,6 +91,7 @@ server.options("/*", async (_request, reply) => reply.code(204).send());
 server.get("/health", async () => ({
   ok: true,
   service: "chenkoai-api",
+  storageStatus: process.env.CHENKOAI_STORAGE_STATUS ?? "unknown",
   storageDegradedReason: process.env.CHENKOAI_STORAGE_DEGRADED_REASON,
 }));
 
@@ -119,6 +120,27 @@ server.post<{ Body: ModelSettingsMutation }>("/settings/model", async (request, 
 });
 
 server.get("/settings/storage", async () => readStorageSettings());
+
+server.post("/settings/storage/reconnect", async () => {
+  const storage = readStorageSettings();
+  const postgresConfigured = storage.storageMode === "postgres";
+  const connected = postgresConfigured ? await canConnectToPostgres() : false;
+  const restartRequired = connected && storage.activeStorageMode !== "postgres";
+
+  return {
+    postgresConfigured,
+    connected,
+    activeStorageMode: storage.activeStorageMode,
+    restartRequired,
+    message: postgresConfigured
+      ? connected
+        ? restartRequired
+          ? "PostgreSQL is reachable. Restart ChenkoAI to switch this API process back to durable storage."
+          : "PostgreSQL is reachable and active."
+        : "PostgreSQL is still unavailable. Start Docker Desktop/Postgres and try again."
+      : "PostgreSQL is not configured for storage.",
+  };
+});
 
 server.post<{ Body: StorageSettingsMutation }>("/settings/storage", async (request, reply) => {
   const settings = await saveStorageSettings(request.body ?? {});
@@ -843,7 +865,7 @@ async function formatRuntimeStatus(): Promise<string> {
   return lines.join("\n");
 }
 
-async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
+async function connectPostgresOrFallBackToMemory(): Promise<void> {
   const postgresStores = [
     process.env.DATA_STORE,
     process.env.AGENT_RUN_STORE,
@@ -852,6 +874,7 @@ async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
   ].some((store) => store === "postgres");
 
   if (!postgresStores) {
+    process.env.CHENKOAI_STORAGE_STATUS = "memory";
     return;
   }
 
@@ -859,22 +882,67 @@ async function fallBackToMemoryIfPostgresIsUnavailable(): Promise<void> {
   if (!connectionString) {
     process.env.CHENKOAI_STORAGE_DEGRADED_REASON =
       "PostgreSQL storage was requested, but DATABASE_URL is missing.";
+    process.env.CHENKOAI_STORAGE_STATUS = "degraded";
     useMemoryStores();
     return;
   }
 
-  const pool = new Pool({ connectionString });
+  process.env.CHENKOAI_STORAGE_STATUS = "starting";
+  const attempts = Number(process.env.CHENKOAI_POSTGRES_STARTUP_ATTEMPTS ?? 30);
+  const delayMs = Number(process.env.CHENKOAI_POSTGRES_STARTUP_DELAY_MS ?? 2000);
+  let lastError = "";
+
+  for (let attempt = 1; attempt <= Math.max(1, attempts); attempt += 1) {
+    const result = await tryConnectToPostgres(connectionString);
+    if (result.ok) {
+      delete process.env.CHENKOAI_STORAGE_DEGRADED_REASON;
+      process.env.CHENKOAI_STORAGE_STATUS = "connected";
+      return;
+    }
+
+    lastError = result.error;
+    if (attempt < attempts) {
+      await sleep(delayMs);
+    }
+  }
+
+  process.env.CHENKOAI_STORAGE_DEGRADED_REASON =
+    lastError || "PostgreSQL is unavailable after startup retries.";
+  process.env.CHENKOAI_STORAGE_STATUS = "degraded";
+  useMemoryStores();
+}
+
+async function canConnectToPostgres(): Promise<boolean> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    return false;
+  }
+
+  return (await tryConnectToPostgres(connectionString)).ok;
+}
+
+async function tryConnectToPostgres(
+  connectionString: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const pool = new Pool({ connectionString, connectionTimeoutMillis: 1500 });
   try {
     await pool.query("select 1");
+    return { ok: true };
   } catch (error) {
-    process.env.CHENKOAI_STORAGE_DEGRADED_REASON =
-      error instanceof Error
-        ? `PostgreSQL is unavailable: ${error.message}`
-        : "PostgreSQL is unavailable.";
-    useMemoryStores();
+    return {
+      ok: false,
+      error:
+        error instanceof Error && error.message
+          ? `PostgreSQL is unavailable: ${error.message}`
+          : "PostgreSQL is unavailable.",
+    };
   } finally {
     await pool.end().catch(() => undefined);
   }
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
 
 function useMemoryStores(): void {

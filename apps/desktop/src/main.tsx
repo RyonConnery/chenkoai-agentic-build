@@ -186,6 +186,14 @@ type StorageSettings = {
   configPath: string;
 };
 
+type StorageReconnectResult = {
+  postgresConfigured: boolean;
+  connected: boolean;
+  activeStorageMode: string;
+  restartRequired: boolean;
+  message: string;
+};
+
 type ApiState = "checking" | "online" | "offline";
 
 function App() {
@@ -843,6 +851,22 @@ function App() {
                 >
                   Save Storage
                 </button>
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(async () => {
+                      const result = await apiPost<StorageReconnectResult>(
+                        "/settings/storage/reconnect",
+                        {},
+                      );
+                      setMessage(result.message);
+                      return selectedRunId || undefined;
+                    })
+                  }
+                >
+                  Reconnect Storage
+                </button>
                 <p className="muted">
                   PostgreSQL mode stores scans, chunks, agent runs, prompts, and approvals
                   permanently after restart.
@@ -851,6 +875,13 @@ function App() {
                   <Metric label="Configured" value={storageSettings.storageMode} />
                   <Metric label="Active" value={storageSettings.activeStorageMode} />
                 </div>
+                {storageSettings.storageMode === "postgres" &&
+                storageSettings.activeStorageMode !== "postgres" ? (
+                  <p className="warning">
+                    Durable storage is configured but not active in this API process. Start
+                    Docker/PostgreSQL, use Reconnect Storage, then restart ChenkoAI when prompted.
+                  </p>
+                ) : null}
                 <p className={storageSettings.storageDegradedReason ? "warning" : "muted"}>
                   {storageSettings.storageDegradedReason ??
                     "PostgreSQL is active when configured and reachable at startup."}

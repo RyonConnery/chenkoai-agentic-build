@@ -40,6 +40,11 @@ fn main() {
 fn start_local_api() -> Option<Child> {
     let project_root = project_root();
     let workspace_root = project_root.to_string_lossy().to_string();
+    let local_settings = read_local_env_file();
+    if postgres_storage_configured(&local_settings) {
+        start_local_infrastructure(&project_root);
+    }
+
     let mut command = if cfg!(target_os = "windows") {
         let mut command = Command::new(windows_npx_command());
         command.args(["tsx", "apps/api/src/server.ts"]);
@@ -64,7 +69,7 @@ fn start_local_api() -> Option<Child> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    for (key, value) in read_local_env_file() {
+    for (key, value) in local_settings {
         command.env(key, value);
     }
 
@@ -83,6 +88,59 @@ fn windows_npx_command() -> String {
     }
 
     "npx.cmd".to_string()
+}
+
+fn start_local_infrastructure(project_root: &PathBuf) {
+    let compose_file = project_root.join("infra").join("docker-compose.yml");
+    if !compose_file.exists() {
+        return;
+    }
+
+    let mut command = Command::new(docker_command());
+    command
+        .arg("compose")
+        .arg("-f")
+        .arg(compose_file)
+        .arg("up")
+        .arg("-d")
+        .arg("postgres")
+        .current_dir(project_root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(0x08000000);
+    }
+
+    let _ = command.spawn();
+}
+
+fn docker_command() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| {
+            "C:\\Program Files".to_string()
+        });
+        let docker_path = PathBuf::from(program_files)
+            .join("Docker")
+            .join("Docker")
+            .join("resources")
+            .join("bin")
+            .join("docker.exe");
+
+        if docker_path.exists() {
+            return docker_path.to_string_lossy().to_string();
+        }
+
+        return "docker.exe".to_string();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        "docker".to_string()
+    }
 }
 
 fn kill_process_tree(mut child: Child) {
@@ -135,4 +193,10 @@ fn parse_env_line(line: &str) -> Option<(String, String)> {
 
     let (key, value) = trimmed.split_once('=')?;
     Some((key.trim().to_string(), value.trim().to_string()))
+}
+
+fn postgres_storage_configured(settings: &HashMap<String, String>) -> bool {
+    ["DATA_STORE", "AGENT_RUN_STORE", "PROMPT_REGISTRY_STORE", "TOOL_PERMISSION_STORE"]
+        .iter()
+        .any(|key| settings.get(*key).map(|value| value == "postgres").unwrap_or(false))
 }
