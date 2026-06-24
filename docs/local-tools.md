@@ -53,6 +53,7 @@ Example:
 Read tools can list workspace folders and read common text/code files without approval. Write tools require approval before execution.
 
 The first write tool is `workspace.write_text_file`. It can write common text/code files inside the workspace only.
+If the target file already exists with the exact approved content, the write is treated as a successful no-op so repeated approved steps do not fail unnecessarily.
 
 ## Permission Flow
 

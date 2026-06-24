@@ -118,6 +118,7 @@ function summarizeToolOutput(value: unknown): string | undefined {
     truncated?: unknown;
     content?: unknown;
     bytesWritten?: unknown;
+    unchanged?: unknown;
   };
 
   if (typeof output.summary === "string") {
@@ -134,6 +135,10 @@ function summarizeToolOutput(value: unknown): string | undefined {
   }
 
   if (typeof output.bytesWritten === "number") {
+    if (output.unchanged === true) {
+      return `Verified ${String(output.path ?? "workspace file")} already had the approved content; no write was needed.`;
+    }
+
     return `Wrote ${output.bytesWritten} bytes to ${String(output.path ?? "workspace file")}.`;
   }
 

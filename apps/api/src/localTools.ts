@@ -252,7 +252,15 @@ export class LocalToolRegistry {
 
     if (!overwrite) {
       try {
-        await fs.stat(target);
+        const existing = await fs.readFile(target, "utf8");
+        if (existing === content) {
+          return {
+            path: toWorkspaceRelativePath(this.#workspaceRoot, target),
+            bytesWritten: 0,
+            unchanged: true,
+          };
+        }
+
         throw new Error("Target already exists. Set overwrite=true and request approval again.");
       } catch (error) {
         if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
