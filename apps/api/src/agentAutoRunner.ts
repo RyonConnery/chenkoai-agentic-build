@@ -3,20 +3,29 @@ import {
   type AgentAutoRunRequest,
   type AgentAutoRunResult,
   type AgentRunSnapshot,
+  type ToolPermissionRequest,
 } from "@chenkoai/agent-core";
 import type { AgentPlanner } from "./agentPlanner.js";
 import type { AgentRunStore } from "./agentRunStore.js";
 import type { AgentRuntime } from "./agentRuntime.js";
+import type { ToolPermissionStore } from "./toolPermissions.js";
 
 export class AgentAutoRunner {
   readonly #store: AgentRunStore;
   readonly #planner: AgentPlanner;
   readonly #runtime: AgentRuntime;
+  readonly #permissions: ToolPermissionStore;
 
-  constructor(store: AgentRunStore, planner: AgentPlanner, runtime: AgentRuntime) {
+  constructor(
+    store: AgentRunStore,
+    planner: AgentPlanner,
+    runtime: AgentRuntime,
+    permissions: ToolPermissionStore,
+  ) {
     this.#store = store;
     this.#planner = planner;
     this.#runtime = runtime;
+    this.#permissions = permissions;
   }
 
   async run(runId: string, input: AgentAutoRunRequest): Promise<AgentAutoRunResult | undefined> {
@@ -36,7 +45,22 @@ export class AgentAutoRunner {
         return { snapshot, cycles, stopReason: "completed" };
       }
 
-      if (hasPendingPermission(snapshot)) {
+      const permissionStatus = await this.#resolveBlockedPermission(snapshot);
+      if (permissionStatus.approved) {
+        const executed = await this.#runtime.executeApprovedPermission(
+          runId,
+          permissionStatus.approved,
+        );
+        if (!executed) {
+          return undefined;
+        }
+
+        cycles += 1;
+        snapshot = executed;
+        continue;
+      }
+
+      if (permissionStatus.pending) {
         return { snapshot, cycles, stopReason: "permission_required" };
       }
 
@@ -49,7 +73,12 @@ export class AgentAutoRunner {
       cycles += 1;
       snapshot = advanced;
 
-      if (hasPendingPermission(snapshot)) {
+      const nextPermissionStatus = await this.#resolveBlockedPermission(snapshot);
+      if (nextPermissionStatus.approved) {
+        continue;
+      }
+
+      if (nextPermissionStatus.pending) {
         return { snapshot, cycles, stopReason: "permission_required" };
       }
 
@@ -64,18 +93,30 @@ export class AgentAutoRunner {
 
     return { snapshot, cycles, stopReason: "max_cycles_reached" };
   }
+
+  async #resolveBlockedPermission(snapshot: AgentRunSnapshot): Promise<{
+    pending?: ToolPermissionRequest;
+    approved?: ToolPermissionRequest;
+  }> {
+    const ids = extractPermissionIds(snapshot);
+    if (ids.size === 0) {
+      return {};
+    }
+
+    const permissions = await this.#permissions.list();
+    const referencedPermissions = permissions.filter((permission) => ids.has(permission.id));
+
+    return {
+      approved: referencedPermissions.find((permission) => permission.status === "approved"),
+      pending: referencedPermissions.find((permission) => permission.status === "pending"),
+    };
+  }
 }
 
 function canPlan(snapshot: AgentRunSnapshot): boolean {
   return (
     snapshot.run.status === "queued" &&
     snapshot.run.steps.every((step) => step.status === "pending")
-  );
-}
-
-function hasPendingPermission(snapshot: AgentRunSnapshot): boolean {
-  return snapshot.run.steps.some(
-    (step) => step.status === "running" && step.details?.includes("permission_required"),
   );
 }
 
@@ -89,4 +130,20 @@ function fingerprint(snapshot: AgentRunSnapshot): string {
       details: step.details,
     })),
   });
+}
+
+function extractPermissionIds(snapshot: AgentRunSnapshot): Set<string> {
+  const ids = new Set<string>();
+  const pattern = /Permission request:\s+([0-9a-fA-F-]{36})/g;
+
+  for (const step of snapshot.run.steps) {
+    for (const match of step.details?.matchAll(pattern) ?? []) {
+      const id = match[1];
+      if (id) {
+        ids.add(id);
+      }
+    }
+  }
+
+  return ids;
 }

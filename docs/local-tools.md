@@ -21,6 +21,7 @@ POST /tools/execute
 GET  /tools/permissions
 POST /tools/permissions/:id/decision
 POST /agent/runs/:id/tools/execute
+POST /agent/runs/:id/permissions/:permissionId/execute
 ```
 
 Use `/tools/execute` for standalone tool testing. Use `/agent/runs/:id/tools/execute` when a tool result should be recorded on the active agent run step.
@@ -78,7 +79,13 @@ Approve it:
 }
 ```
 
-Then execute the same tool input with the approval id:
+Then execute the approved permission against the run:
+
+```text
+POST /agent/runs/:id/permissions/:permissionId/execute
+```
+
+That run-scoped endpoint verifies that the permission belongs to the selected run and consumes the one-use approval. Lower-level callers can still execute the same tool input with the approval id:
 
 ```json
 {

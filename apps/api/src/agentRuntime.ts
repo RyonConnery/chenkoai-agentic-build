@@ -4,7 +4,7 @@ import type { AgentMemoryRetriever } from "./agentMemory.js";
 import type { AgentRunStore } from "./agentRunStore.js";
 import type { AgentToolExecutor } from "./agentToolExecutor.js";
 import type { ModelProviderAdapter } from "./modelProvider.js";
-import type { ToolExecutionResult } from "@chenkoai/agent-core";
+import type { ToolExecutionResult, ToolPermissionRequest } from "@chenkoai/agent-core";
 import {
   AGENT_STEP_PROMPT_ID,
   createAgentStepPromptVariables,
@@ -99,6 +99,18 @@ export class AgentRuntime {
         }),
       )
     ) ?? toolUpdated;
+  }
+
+  async executeApprovedPermission(
+    runId: string,
+    permission: ToolPermissionRequest,
+  ): Promise<AgentRunSnapshot | undefined> {
+    if (!this.#toolExecutor) {
+      return await this.#store.getSnapshot(runId);
+    }
+
+    const toolExecution = await this.#toolExecutor.executeApprovedPermission(runId, permission);
+    return toolExecution.snapshot ?? (await this.#store.getSnapshot(runId));
   }
 
   async #createToolInformedAnalysis(input: {

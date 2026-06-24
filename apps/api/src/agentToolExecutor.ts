@@ -1,6 +1,7 @@
 import type {
   AgentRunSnapshot,
   AgentRunStep,
+  ToolPermissionRequest,
   ToolExecuteRequest,
   ToolExecutionResult,
 } from "@chenkoai/agent-core";
@@ -44,6 +45,38 @@ export class AgentToolExecutor {
       snapshot: updated,
     };
   }
+
+  async executeApprovedPermission(
+    runId: string,
+    permission: ToolPermissionRequest,
+  ): Promise<AgentToolExecutionResponse> {
+    const snapshot = await this.#store.getSnapshot(runId);
+    if (!snapshot) {
+      throw requestError(404, "agent_run_not_found", "Agent run not found");
+    }
+
+    if (!isPermissionReferencedByRun(snapshot, permission.id)) {
+      throw requestError(
+        409,
+        "permission_not_referenced_by_run",
+        "Permission request does not belong to this agent run",
+      );
+    }
+
+    if (permission.status !== "approved") {
+      throw requestError(
+        409,
+        "permission_not_approved",
+        `Permission request is ${permission.status}`,
+      );
+    }
+
+    return await this.execute(runId, {
+      name: permission.toolName,
+      input: permission.input,
+      approvalId: permission.id,
+    });
+  }
 }
 
 function findActiveStep(snapshot: AgentRunSnapshot): AgentRunStep | undefined {
@@ -64,6 +97,12 @@ function formatToolTranscript(result: ToolExecutionResult): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function isPermissionReferencedByRun(snapshot: AgentRunSnapshot, permissionId: string): boolean {
+  return snapshot.run.steps.some((step) =>
+    step.details?.includes(`Permission request: ${permissionId}`),
+  );
 }
 
 function summarizeToolOutput(value: unknown): string | undefined {

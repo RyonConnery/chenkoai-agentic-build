@@ -696,11 +696,10 @@ function App() {
                               decidedBy: "desktop-control-center",
                             });
                             if (approved) {
-                              await apiPost(`/agent/runs/${selectedRunId}/tools/execute`, {
-                                name: permission.toolName,
-                                approvalId: permission.id,
-                                input: permission.input,
-                              });
+                              await apiPost(
+                                `/agent/runs/${selectedRunId}/permissions/${permission.id}/execute`,
+                                {},
+                              );
                               setMessage("Permission approved and tool executed.");
                             } else {
                               setMessage("Permission denied.");

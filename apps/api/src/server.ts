@@ -83,7 +83,12 @@ const agentRuntime = new AgentRuntime(
   agentToolExecutor,
   runtimeStatusProvider,
 );
-const agentAutoRunner = new AgentAutoRunner(agentRunStore, agentPlanner, agentRuntime);
+const agentAutoRunner = new AgentAutoRunner(
+  agentRunStore,
+  agentPlanner,
+  agentRuntime,
+  toolPermissions,
+);
 
 server.addHook("onRequest", async (_request, reply) => {
   reply.header("Access-Control-Allow-Origin", process.env.CHENKOAI_DESKTOP_ORIGIN ?? "*");
@@ -203,6 +208,21 @@ server.post<{
 
   return permission;
 });
+
+server.post<{ Params: { runId: string; permissionId: string } }>(
+  "/agent/runs/:runId/permissions/:permissionId/execute",
+  async (request, reply) => {
+    const permissions = await toolPermissions.list();
+    const permission = permissions.find(
+      (candidate) => candidate.id === request.params.permissionId,
+    );
+    if (!permission) {
+      return reply.code(404).send({ error: "tool_permission_not_found" });
+    }
+
+    return await agentToolExecutor.executeApprovedPermission(request.params.runId, permission);
+  },
+);
 
 server.post<{ Body: TextIngestRequest }>("/data/ingest/text", async (request, reply) => {
   const result = await dataStore.ingestText(request.body);

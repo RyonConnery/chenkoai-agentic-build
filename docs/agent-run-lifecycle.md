@@ -13,6 +13,7 @@ POST /agent/runs/:id/plan
 POST /agent/runs/:id/advance
 POST /agent/runs/:id/auto
 POST /agent/runs/:id/tools/execute
+POST /agent/runs/:id/permissions/:permissionId/execute
 ```
 
 `POST /agent/run` is kept as a compatibility alias for early local testing.
@@ -25,7 +26,7 @@ POST /agent/runs/:id/tools/execute
 
 Before generation, the runtime searches embedded ChenkoAI data chunks using the run goal, run context, current step title, and completed step details. The top matches are injected into the step prompt as relevant memory.
 
-`POST /agent/runs/:id/auto` runs a bounded supervised loop. It can plan first, advance multiple steps, and stop when the run completes, reaches `maxCycles`, stops making progress, or hits a permission request.
+`POST /agent/runs/:id/auto` runs a bounded supervised loop. It can plan first, advance multiple steps, execute approved pending tool work, and stop when the run completes, reaches `maxCycles`, stops making progress, or hits a permission request.
 
 ```json
 {
@@ -38,9 +39,11 @@ Before generation, the runtime searches embedded ChenkoAI data chunks using the 
 
 `POST /agent/runs/:id/tools/execute` executes a local tool against the run's active step. The tool result is appended to the step details so the run keeps a transcript of actions and outputs.
 
-Permissioned tools return a permission request first. Approve the request through `/tools/permissions/:id/decision`, then retry the same agent tool call with `approvalId`.
+Permissioned tools return a permission request first. Approve the request through `/tools/permissions/:id/decision`, then execute it through `/agent/runs/:id/permissions/:permissionId/execute`. This endpoint verifies that the permission belongs to the selected run, consumes the one-use approval, performs the exact approved tool input, and appends the result to the active step transcript.
 
 The model can also propose a tool action during `advance` by returning a fenced `chenkoai-tool` JSON block. The runtime parses that block, routes it through the same permission gate, and appends the tool result or permission request to the active step transcript.
+
+After a permission is approved, `POST /agent/runs/:id/auto` can continue the run and execute the approved action before moving to the next step.
 
 ## Statuses
 
