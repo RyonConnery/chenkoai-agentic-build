@@ -41,6 +41,11 @@ import {
   type ModelProviderAdapter,
 } from "./modelProvider.js";
 import { createPromptRegistry } from "./promptRegistryPersistence.js";
+import {
+  createStorageBackup,
+  listStorageBackups,
+  restoreStorageBackup,
+} from "./storageBackup.js";
 import { SystemScanner } from "./systemScanner.js";
 import { createToolPermissionStore } from "./toolPermissionPersistence.js";
 
@@ -148,6 +153,17 @@ server.post<{ Body: StorageSettingsMutation }>("/settings/storage", async (reque
     ...settings,
     restartRequired: true,
   });
+});
+
+server.get("/storage/backups", async () => listStorageBackups());
+
+server.post("/storage/backups/export", async (request, reply) => {
+  const result = await createStorageBackup(requireDatabaseUrl());
+  return reply.code(201).send(result);
+});
+
+server.post<{ Body: { fileName?: string } }>("/storage/backups/restore", async (request) => {
+  return await restoreStorageBackup(requireDatabaseUrl(), request.body?.fileName ?? "");
 });
 
 server.get("/system/profile", async () => systemScanner.profile());
@@ -954,4 +970,13 @@ function useMemoryStores(): void {
   process.env.AGENT_RUN_STORE = "memory";
   process.env.PROMPT_REGISTRY_STORE = "memory";
   process.env.TOOL_PERMISSION_STORE = "memory";
+}
+
+function requireDatabaseUrl(): string {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required for ChenkoAI storage backups.");
+  }
+
+  return databaseUrl;
 }

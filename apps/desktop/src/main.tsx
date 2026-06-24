@@ -194,6 +194,28 @@ type StorageReconnectResult = {
   message: string;
 };
 
+type StorageBackupSummary = {
+  fileName: string;
+  filePath: string;
+  createdAt: string;
+  bytes: number;
+  counts: {
+    data_datasets: number;
+    data_documents: number;
+    data_chunks: number;
+    agent_runs: number;
+    agent_run_steps: number;
+    agent_run_events: number;
+    prompt_templates: number;
+    tool_permission_requests: number;
+  };
+};
+
+type StorageRestoreResult = {
+  restored: StorageBackupSummary["counts"];
+  backup: StorageBackupSummary;
+};
+
 type ApiState = "checking" | "online" | "offline";
 
 function App() {
@@ -211,6 +233,7 @@ function App() {
   const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
+  const [storageBackups, setStorageBackups] = useState<StorageBackupSummary[]>([]);
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const modelSettingsDirty = useRef(false);
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -239,6 +262,7 @@ function App() {
         permissionPayload,
         datasetPayload,
         documentPayload,
+        backupPayload,
       ] = await Promise.all([
         apiGet<{ ok: boolean }>("/health"),
         apiGet<{ provider: string }>("/model/provider"),
@@ -249,6 +273,9 @@ function App() {
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
         apiGet<{ datasets: DataDataset[] }>("/data/datasets"),
         apiGet<{ documents: DataDocument[] }>("/data/documents"),
+        apiGet<{ backups: StorageBackupSummary[] }>("/storage/backups").catch(() => ({
+          backups: [],
+        })),
       ]);
 
       if (!health.ok) {
@@ -266,6 +293,7 @@ function App() {
       setPermissions(permissionPayload.permissions);
       setDatasets(datasetPayload.datasets);
       setDocuments(documentPayload.documents);
+      setStorageBackups(backupPayload.backups);
       setDataQuality(await apiGet<DataQualitySummary>("/data/quality").catch(() => undefined));
 
       const runId = nextRunId || runPayload.runs[0]?.id || "";
@@ -276,6 +304,7 @@ function App() {
       setModelProvider("unknown");
       setModelSettings(undefined);
       setStorageSettings(undefined);
+      setStorageBackups([]);
       setDataQuality(undefined);
       setSystemProfile(undefined);
       setReport(undefined);
@@ -886,6 +915,67 @@ function App() {
                   {storageSettings.storageDegradedReason ??
                     "PostgreSQL is active when configured and reachable at startup."}
                 </p>
+                <section className="backup-panel">
+                  <div className="section-heading compact">
+                    <h3>Data Backups</h3>
+                    <button
+                      disabled={busy || storageSettings.activeStorageMode !== "postgres"}
+                      onClick={() =>
+                        void runAction(async () => {
+                          const backup = await apiPost<StorageBackupSummary>(
+                            "/storage/backups/export",
+                            {},
+                          );
+                          setMessage(
+                            `Backup exported: ${backup.counts.data_documents} documents, ${backup.counts.data_chunks} chunks, ${backup.counts.agent_runs} runs.`,
+                          );
+                          return selectedRunId || undefined;
+                        })
+                      }
+                    >
+                      Export Backup
+                    </button>
+                  </div>
+                  {storageBackups.length === 0 ? (
+                    <p className="muted">No local backups created yet.</p>
+                  ) : (
+                    <div className="backup-list">
+                      {storageBackups.slice(0, 4).map((backup) => (
+                        <div className="backup-row" key={backup.fileName}>
+                          <div>
+                            <strong>{formatBackupDate(backup.createdAt)}</strong>
+                            <span>
+                              {backup.counts.data_documents} docs | {backup.counts.data_chunks}{" "}
+                              chunks | {backup.counts.agent_runs} runs
+                            </span>
+                          </div>
+                          <button
+                            className="secondary"
+                            disabled={busy || storageSettings.activeStorageMode !== "postgres"}
+                            onClick={() =>
+                              void runAction(async () => {
+                                const result = await apiPost<StorageRestoreResult>(
+                                  "/storage/backups/restore",
+                                  { fileName: backup.fileName },
+                                );
+                                setMessage(
+                                  `Backup restored: ${result.restored.data_documents} documents, ${result.restored.data_chunks} chunks, ${result.restored.agent_runs} runs merged into Postgres.`,
+                                );
+                                return selectedRunId || undefined;
+                              })
+                            }
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="muted">
+                    Backups are saved locally in this project&apos;s backups folder and are not
+                    committed to Git.
+                  </p>
+                </section>
               </div>
             ) : (
               <p className="muted">Storage settings unavailable.</p>
@@ -926,6 +1016,15 @@ function Metric({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function formatBackupDate(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return createdAt;
+  }
+
+  return date.toLocaleString();
 }
 
 function PermissionCard({
