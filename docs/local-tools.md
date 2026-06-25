@@ -34,6 +34,7 @@ Agent step generation can also propose a tool action by returning a fenced `chen
 workspace.list_files
 workspace.read_text_file
 workspace.write_text_file
+workspace.run_project_check
 ```
 
 Example:
@@ -54,6 +55,16 @@ Read tools can list workspace folders and read common text/code files without ap
 
 The first write tool is `workspace.write_text_file`. It can write common text/code files inside the workspace only.
 If the target file already exists with the exact approved content, the write is treated as a successful no-op so repeated approved steps do not fail unnecessarily.
+
+`workspace.run_project_check` requires approval and can only run allowlisted commands:
+
+```text
+npm run check --workspace @chenkoai/api
+npm run check --workspace @chenkoai/desktop
+npm run check --workspaces --if-present
+```
+
+It does not accept arbitrary shell commands.
 
 ## Permission Flow
 

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
@@ -59,6 +60,7 @@ const highValueEntryNames = new Set([
   "Cargo.toml",
   "tsconfig.base.json",
 ]);
+const projectCheckTargets = new Set(["api", "desktop", "all"]);
 
 export class LocalToolRegistry {
   readonly #workspaceRoot: string;
@@ -121,6 +123,24 @@ export class LocalToolRegistry {
           },
         },
       },
+      {
+        name: "workspace.run_project_check",
+        description:
+          "Run an allowlisted ChenkoAI project check command and capture the result.",
+        destructive: false,
+        requiresApproval: true,
+        inputSchema: {
+          type: "object",
+          required: ["target"],
+          properties: {
+            target: {
+              type: "string",
+              enum: ["api", "desktop", "all"],
+              description: "Check target to run.",
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -162,6 +182,14 @@ export class LocalToolRegistry {
             readString(request.input.content),
             readBoolean(request.input.overwrite, false),
           ),
+        };
+      }
+
+      if (request.name === "workspace.run_project_check") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#runProjectCheck(readProjectCheckTarget(request.input.target)),
         };
       }
 
@@ -279,6 +307,25 @@ export class LocalToolRegistry {
     };
   }
 
+  async #runProjectCheck(target: string): Promise<unknown> {
+    const args = createProjectCheckArgs(target);
+    const command = createProcessCommand(args);
+    const result = await runProcess(command.program, command.args, this.#workspaceRoot, 120_000);
+
+    return {
+      target,
+      command: ["npm", ...args].join(" "),
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      stdout: trimOutput(result.stdout),
+      stderr: trimOutput(result.stderr),
+      summary:
+        result.exitCode === 0 && !result.timedOut
+          ? `Project check passed for ${target}.`
+          : `Project check failed for ${target} with exit code ${result.exitCode}.`,
+    };
+  }
+
   async #ensurePermission(
     request: ReturnType<typeof normalizeToolExecuteRequest>,
   ): Promise<ToolExecutionResult | undefined> {
@@ -366,6 +413,11 @@ function validateToolInput(request: ReturnType<typeof normalizeToolExecuteReques
 
   if (request.name === "workspace.read_text_file") {
     readString(request.input.path);
+    return;
+  }
+
+  if (request.name === "workspace.run_project_check") {
+    readProjectCheckTarget(request.input.target);
   }
 }
 
@@ -375,6 +427,84 @@ function readNumber(value: unknown, fallback: number): number {
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function readProjectCheckTarget(value: unknown): string {
+  const target = readString(value);
+  if (!projectCheckTargets.has(target)) {
+    throw new Error("Project check target must be api, desktop, or all");
+  }
+
+  return target;
+}
+
+function createProjectCheckArgs(target: string): string[] {
+  if (target === "api") {
+    return ["run", "check", "--workspace", "@chenkoai/api"];
+  }
+
+  if (target === "desktop") {
+    return ["run", "check", "--workspace", "@chenkoai/desktop"];
+  }
+
+  return ["run", "check", "--workspaces", "--if-present"];
+}
+
+function createProcessCommand(args: string[]): { program: string; args: string[] } {
+  if (process.platform === "win32") {
+    return {
+      program: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", "npm", ...args],
+    };
+  }
+
+  return {
+    program: "npm",
+    args,
+  };
+}
+
+async function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+): Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (exitCode) => {
+      clearTimeout(timer);
+      resolve({ exitCode, stdout, stderr, timedOut });
+    });
+  });
+}
+
+function trimOutput(value: string): string {
+  const limit = 8_000;
+  return value.length > limit ? `${value.slice(0, limit)}\n... output truncated ...` : value;
 }
 
 function toWorkspaceRelativePath(workspaceRoot: string, target: string): string {

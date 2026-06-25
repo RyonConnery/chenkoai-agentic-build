@@ -1097,6 +1097,17 @@ function describePermission(permission: PermissionRequest): {
     };
   }
 
+  if (permission.toolName === "workspace.run_project_check") {
+    const target =
+      typeof permission.input.target === "string" ? permission.input.target : "unknown";
+    return {
+      title: `Run project check: ${target}`,
+      description:
+        "ChenkoAI wants to run an allowlisted npm check command and record the result.",
+      details: [`Target: ${target}`],
+    };
+  }
+
   return {
     title: permission.toolName,
     description: permission.reason,

@@ -119,6 +119,11 @@ function summarizeToolOutput(value: unknown): string | undefined {
     content?: unknown;
     bytesWritten?: unknown;
     unchanged?: unknown;
+    command?: unknown;
+    exitCode?: unknown;
+    timedOut?: unknown;
+    stdout?: unknown;
+    stderr?: unknown;
   };
 
   if (typeof output.summary === "string") {
@@ -140,6 +145,13 @@ function summarizeToolOutput(value: unknown): string | undefined {
     }
 
     return `Wrote ${output.bytesWritten} bytes to ${String(output.path ?? "workspace file")}.`;
+  }
+
+  if (typeof output.command === "string") {
+    const status =
+      output.exitCode === 0 && output.timedOut !== true ? "passed" : "failed";
+    const stderr = typeof output.stderr === "string" && output.stderr.trim() ? " Stderr captured." : "";
+    return `Project check ${status}: ${output.command} exited with ${String(output.exitCode)}.${stderr}`;
   }
 
   return JSON.stringify(value).slice(0, 500);
