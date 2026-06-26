@@ -1217,6 +1217,29 @@ function describePermission(permission: PermissionRequest): {
     };
   }
 
+  if (permission.toolName === "workspace.open_development_target") {
+    const app = typeof permission.input.app === "string" ? permission.input.app : "unknown";
+    const line = typeof permission.input.line === "number" ? permission.input.line : undefined;
+    return {
+      title: path ? `Open in ${app}: ${path}` : `Open development target in ${app}`,
+      description:
+        "ChenkoAI wants approval before launching an IDE, engine project, or development file.",
+      details: [`App: ${app}`, path ? `Path: ${path}` : "", line ? `Line: ${line}` : ""].filter(
+        Boolean,
+      ),
+    };
+  }
+
+  if (permission.toolName === "workspace.run_dev_task") {
+    const task = typeof permission.input.task === "string" ? permission.input.task : "unknown";
+    return {
+      title: `Run development task: ${task}`,
+      description:
+        "ChenkoAI wants to run an allowlisted development task and record the result.",
+      details: [`Task: ${task}`],
+    };
+  }
+
   return {
     title: permission.toolName,
     description: permission.reason,

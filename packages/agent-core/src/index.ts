@@ -58,6 +58,9 @@ export const localToolNameSchema = z.enum([
   "workspace.run_project_check",
   "workspace.git_status",
   "workspace.git_diff",
+  "workspace.detect_development_tools",
+  "workspace.open_development_target",
+  "workspace.run_dev_task",
 ]);
 
 export const toolExecuteRequestSchema = z.object({

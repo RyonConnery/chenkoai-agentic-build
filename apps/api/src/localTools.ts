@@ -61,6 +61,25 @@ const highValueEntryNames = new Set([
   "tsconfig.base.json",
 ]);
 const projectCheckTargets = new Set(["api", "desktop", "all"]);
+const developmentOpenApps = new Set(["vscode", "default", "unreal"]);
+const developmentTaskNames = new Set([
+  "api_check",
+  "desktop_check",
+  "agent_core_check",
+  "all_checks",
+  "api_build",
+  "desktop_build",
+  "desktop_installer_build",
+  "rust_native_check",
+]);
+
+type DevelopmentTaskDefinition = {
+  task: string;
+  description: string;
+  program: string;
+  args: string[];
+  timeoutMs: number;
+};
 
 export class LocalToolRegistry {
   readonly #workspaceRoot: string;
@@ -166,6 +185,61 @@ export class LocalToolRegistry {
           },
         },
       },
+      {
+        name: "workspace.detect_development_tools",
+        description:
+          "Detect installed development tools and project files for IDE, engine, and build workflows.",
+        destructive: false,
+        requiresApproval: false,
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "workspace.open_development_target",
+        description:
+          "Open an approved workspace file, folder, or engine project in VS Code, the OS default app, or Unreal.",
+        destructive: false,
+        requiresApproval: true,
+        inputSchema: {
+          type: "object",
+          required: ["app", "path"],
+          properties: {
+            app: {
+              type: "string",
+              enum: ["vscode", "default", "unreal"],
+              description: "Development application to open.",
+            },
+            path: {
+              type: "string",
+              description: "Workspace-relative file, folder, or .uproject path.",
+            },
+            line: {
+              type: "number",
+              description: "Optional 1-based line number for VS Code file opens.",
+            },
+          },
+        },
+      },
+      {
+        name: "workspace.run_dev_task",
+        description:
+          "Run an approved allowlisted development task such as checks, builds, installer builds, or Rust validation.",
+        destructive: false,
+        requiresApproval: true,
+        inputSchema: {
+          type: "object",
+          required: ["task"],
+          properties: {
+            task: {
+              type: "string",
+              enum: [...developmentTaskNames],
+              description: "Allowlisted development task to run.",
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -231,6 +305,34 @@ export class LocalToolRegistry {
           name: request.name,
           ok: true,
           output: await this.#gitDiff(readNumber(request.input.maxCharacters, 12_000)),
+        };
+      }
+
+      if (request.name === "workspace.detect_development_tools") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#detectDevelopmentTools(),
+        };
+      }
+
+      if (request.name === "workspace.open_development_target") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#openDevelopmentTarget(
+            readDevelopmentOpenApp(request.input.app),
+            readString(request.input.path),
+            readNumber(request.input.line, 0),
+          ),
+        };
+      }
+
+      if (request.name === "workspace.run_dev_task") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#runDevelopmentTask(readDevelopmentTaskName(request.input.task)),
         };
       }
 
@@ -350,7 +452,7 @@ export class LocalToolRegistry {
 
   async #runProjectCheck(target: string): Promise<unknown> {
     const args = createProjectCheckArgs(target);
-    const command = createProcessCommand(args);
+    const command = createProcessCommand("npm", args);
     const result = await runProcess(command.program, command.args, this.#workspaceRoot, 120_000);
 
     return {
@@ -399,6 +501,122 @@ export class LocalToolRegistry {
           ? `Git diff returned ${diff.length} characters${result.stdout.length > limit ? " and was truncated" : ""}.`
           : `Git diff failed with exit code ${result.exitCode}.`,
     };
+  }
+
+  async #detectDevelopmentTools(): Promise<unknown> {
+    const [commands, projectFiles, packageScripts, vsCodeLaunch] = await Promise.all([
+      detectCommands(["git", "node", "npm", "cargo", "python", "docker", "UnrealEditor"]),
+      this.#findDevelopmentProjectFiles(),
+      readPackageScripts(path.join(this.#workspaceRoot, "package.json")),
+      resolveVsCodeLaunchProgram(),
+    ]);
+    commands.unshift({
+      name: "vscode",
+      available: Boolean(vsCodeLaunch),
+      path: vsCodeLaunch?.label,
+    });
+
+    const availableTasks = [...developmentTaskNames].map((task) => ({
+      task,
+      description: createDevelopmentTaskDefinition(task).description,
+    }));
+
+    return {
+      workspaceRoot: this.#workspaceRoot,
+      commands,
+      projectFiles,
+      packageScripts,
+      availableOpenApps: [...developmentOpenApps],
+      availableTasks,
+      summary: `Detected ${projectFiles.length} development project files and ${commands.filter((command) => command.available).length} available development tools.`,
+    };
+  }
+
+  async #openDevelopmentTarget(app: string, relativePath: string, line: number): Promise<unknown> {
+    const target = this.#resolveWorkspacePath(relativePath);
+    const stat = await fs.stat(target);
+
+    if (app === "unreal" && path.extname(target).toLowerCase() !== ".uproject") {
+      throw new Error("Unreal targets must be workspace-relative .uproject files");
+    }
+
+    const lineNumber = Math.max(0, Math.floor(line));
+    const launch =
+      app === "vscode"
+        ? await createVsCodeLaunch(target, stat.isFile(), lineNumber)
+        : createDefaultOpenLaunch(target);
+    const pid = await launchDetachedProcess(launch.program, launch.args, this.#workspaceRoot);
+
+    return {
+      app,
+      path: toWorkspaceRelativePath(this.#workspaceRoot, target),
+      command: [launch.label, ...launch.args].join(" "),
+      pid,
+      summary:
+        app === "vscode"
+          ? `Opened workspace target in VS Code: ${toWorkspaceRelativePath(this.#workspaceRoot, target)}.`
+          : `Opened workspace target with ${app}: ${toWorkspaceRelativePath(this.#workspaceRoot, target)}.`,
+    };
+  }
+
+  async #runDevelopmentTask(task: string): Promise<unknown> {
+    const definition = createDevelopmentTaskDefinition(task);
+    const command = createProcessCommand(definition.program, definition.args);
+    const result = await runProcess(
+      command.program,
+      command.args,
+      this.#workspaceRoot,
+      definition.timeoutMs,
+    );
+
+    return {
+      task,
+      description: definition.description,
+      command: [definition.program, ...definition.args].join(" "),
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      stdout: trimOutput(result.stdout),
+      stderr: trimOutput(result.stderr),
+      summary:
+        result.exitCode === 0 && !result.timedOut
+          ? `Development task passed: ${definition.description}.`
+          : `Development task failed: ${definition.description} exited with ${result.exitCode}.`,
+    };
+  }
+
+  async #findDevelopmentProjectFiles(): Promise<{ path: string; type: string }[]> {
+    const matches: { path: string; type: string }[] = [];
+    const walk = async (folder: string, depth: number): Promise<void> => {
+      if (depth > 4 || matches.length >= 80) {
+        return;
+      }
+
+      const entries = await fs.readdir(folder, { withFileTypes: true });
+      for (const entry of entries) {
+        if (matches.length >= 80) {
+          return;
+        }
+
+        const target = path.join(folder, entry.name);
+        if (entry.isDirectory()) {
+          if (!lowValueDirectoryNames.has(entry.name)) {
+            await walk(target, depth + 1);
+          }
+          continue;
+        }
+
+        const type = classifyDevelopmentProjectFile(entry.name);
+        if (type) {
+          matches.push({
+            path: toWorkspaceRelativePath(this.#workspaceRoot, target),
+            type,
+          });
+        }
+      }
+    };
+
+    await walk(this.#workspaceRoot, 0);
+    return matches.sort((a, b) => a.path.localeCompare(b.path));
   }
 
   async #ensurePermission(
@@ -493,6 +711,17 @@ function validateToolInput(request: ReturnType<typeof normalizeToolExecuteReques
 
   if (request.name === "workspace.run_project_check") {
     readProjectCheckTarget(request.input.target);
+    return;
+  }
+
+  if (request.name === "workspace.open_development_target") {
+    readDevelopmentOpenApp(request.input.app);
+    readString(request.input.path);
+    return;
+  }
+
+  if (request.name === "workspace.run_dev_task") {
+    readDevelopmentTaskName(request.input.task);
   }
 }
 
@@ -513,6 +742,24 @@ function readProjectCheckTarget(value: unknown): string {
   return target;
 }
 
+function readDevelopmentOpenApp(value: unknown): string {
+  const app = readString(value);
+  if (!developmentOpenApps.has(app)) {
+    throw new Error("Development app must be vscode, default, or unreal");
+  }
+
+  return app;
+}
+
+function readDevelopmentTaskName(value: unknown): string {
+  const task = readString(value);
+  if (!developmentTaskNames.has(task)) {
+    throw new Error("Development task is not allowlisted");
+  }
+
+  return task;
+}
+
 function createProjectCheckArgs(target: string): string[] {
   if (target === "api") {
     return ["run", "check", "--workspace", "@chenkoai/api"];
@@ -525,18 +772,240 @@ function createProjectCheckArgs(target: string): string[] {
   return ["run", "check", "--workspaces", "--if-present"];
 }
 
-function createProcessCommand(args: string[]): { program: string; args: string[] } {
+function createDevelopmentTaskDefinition(task: string): DevelopmentTaskDefinition {
+  const definitions: Record<string, DevelopmentTaskDefinition> = {
+    api_check: {
+      task,
+      description: "Type-check the local TypeScript API.",
+      program: "npm",
+      args: ["run", "check", "--workspace", "@chenkoai/api"],
+      timeoutMs: 120_000,
+    },
+    desktop_check: {
+      task,
+      description: "Type-check the Tauri desktop UI.",
+      program: "npm",
+      args: ["run", "check", "--workspace", "@chenkoai/desktop"],
+      timeoutMs: 120_000,
+    },
+    agent_core_check: {
+      task,
+      description: "Type-check the shared agent core package.",
+      program: "npm",
+      args: ["run", "check", "--workspace", "@chenkoai/agent-core"],
+      timeoutMs: 120_000,
+    },
+    all_checks: {
+      task,
+      description: "Run all available workspace checks.",
+      program: "npm",
+      args: ["run", "check", "--workspaces", "--if-present"],
+      timeoutMs: 180_000,
+    },
+    api_build: {
+      task,
+      description: "Build the local TypeScript API.",
+      program: "npm",
+      args: ["run", "build", "--workspace", "@chenkoai/api"],
+      timeoutMs: 120_000,
+    },
+    desktop_build: {
+      task,
+      description: "Build the desktop web UI bundle.",
+      program: "npm",
+      args: ["run", "build", "--workspace", "@chenkoai/desktop"],
+      timeoutMs: 180_000,
+    },
+    desktop_installer_build: {
+      task,
+      description: "Build the Windows desktop installer.",
+      program: "npm",
+      args: ["run", "tauri:build", "--workspace", "@chenkoai/desktop"],
+      timeoutMs: 600_000,
+    },
+    rust_native_check: {
+      task,
+      description: "Run cargo check for Rust native workspace code.",
+      program: "cargo",
+      args: ["check"],
+      timeoutMs: 180_000,
+    },
+  };
+
+  const definition = definitions[task];
+  if (!definition) {
+    throw new Error("Development task is not allowlisted");
+  }
+
+  return definition;
+}
+
+function createProcessCommand(program: string, args: string[]): { program: string; args: string[] } {
   if (process.platform === "win32") {
     return {
       program: process.env.ComSpec ?? "cmd.exe",
-      args: ["/d", "/s", "/c", "npm", ...args],
+      args: ["/d", "/s", "/c", program, ...args],
     };
   }
 
   return {
-    program: "npm",
+    program,
     args,
   };
+}
+
+async function createVsCodeLaunch(
+  target: string,
+  isFile: boolean,
+  line: number,
+): Promise<{ program: string; args: string[]; label: string }> {
+  const launchProgram = await resolveVsCodeLaunchProgram();
+  if (!launchProgram) {
+    throw new Error("VS Code is not available through PATH or common install locations");
+  }
+
+  const openTarget = isFile && line > 0 ? `${target}:${line}` : target;
+  if (launchProgram.kind === "path") {
+    return {
+      program: launchProgram.value,
+      args: ["-g", openTarget],
+      label: launchProgram.label,
+    };
+  }
+
+  return {
+    program: process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : launchProgram.value,
+    args:
+      process.platform === "win32"
+        ? ["/d", "/s", "/c", launchProgram.value, "-g", openTarget]
+        : ["-g", openTarget],
+    label: launchProgram.label,
+  };
+}
+
+function createDefaultOpenLaunch(target: string): { program: string; args: string[]; label: string } {
+  if (process.platform === "win32") {
+    return {
+      program: process.env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c", "start", "", target],
+      label: "start",
+    };
+  }
+
+  if (process.platform === "darwin") {
+    return { program: "open", args: [target], label: "open" };
+  }
+
+  return { program: "xdg-open", args: [target], label: "xdg-open" };
+}
+
+async function launchDetachedProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<number | undefined> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      detached: true,
+      shell: false,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+
+    child.on("error", reject);
+    child.on("spawn", () => {
+      child.unref();
+      resolve(child.pid);
+    });
+  });
+}
+
+async function detectCommands(
+  names: string[],
+): Promise<{ name: string; available: boolean; path?: string }[]> {
+  return await Promise.all(
+    names.map(async (name) => {
+      const available = await commandAvailable(name);
+      return { name, available };
+    }),
+  );
+}
+
+async function commandAvailable(name: string): Promise<boolean> {
+  const command =
+    process.platform === "win32"
+      ? { program: process.env.ComSpec ?? "cmd.exe", args: ["/d", "/s", "/c", "where", name] }
+      : { program: "sh", args: ["-c", `command -v ${name}`] };
+  try {
+    const result = await runProcess(command.program, command.args, defaultWorkspaceRoot, 10_000);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function readPackageScripts(packageJsonPath: string): Promise<Record<string, string>> {
+  try {
+    const content = await fs.readFile(packageJsonPath, "utf8");
+    const parsed = JSON.parse(content) as { scripts?: unknown };
+    if (!parsed.scripts || typeof parsed.scripts !== "object") {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed.scripts).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function resolveVsCodeLaunchProgram(): Promise<
+  { kind: "command" | "path"; value: string; label: string } | undefined
+> {
+  if (await commandAvailable("code")) {
+    return { kind: "command", value: "code", label: "code" };
+  }
+
+  const candidates =
+    process.platform === "win32"
+      ? [
+          process.env.LOCALAPPDATA
+            ? path.join(process.env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe")
+            : "",
+          process.env.ProgramFiles
+            ? path.join(process.env.ProgramFiles, "Microsoft VS Code", "Code.exe")
+            : "",
+          process.env["ProgramFiles(x86)"]
+            ? path.join(process.env["ProgramFiles(x86)"], "Microsoft VS Code", "Code.exe")
+            : "",
+        ]
+      : [];
+
+  for (const candidate of candidates.filter(Boolean)) {
+    try {
+      await fs.access(candidate);
+      return { kind: "path", value: candidate, label: candidate };
+    } catch {
+      // Try the next common install path.
+    }
+  }
+
+  return undefined;
+}
+
+function classifyDevelopmentProjectFile(fileName: string): string | undefined {
+  const lower = fileName.toLowerCase();
+  if (lower === "package.json") return "node-package";
+  if (lower === "cargo.toml") return "rust-package";
+  if (lower === "pyproject.toml") return "python-package";
+  if (lower.endsWith(".uproject")) return "unreal-project";
+  if (lower.endsWith(".sln")) return "visual-studio-solution";
+  if (lower.endsWith(".csproj")) return "dotnet-project";
+  return undefined;
 }
 
 async function runProcess(

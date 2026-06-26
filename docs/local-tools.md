@@ -37,6 +37,9 @@ workspace.write_text_file
 workspace.run_project_check
 workspace.git_status
 workspace.git_diff
+workspace.detect_development_tools
+workspace.open_development_target
+workspace.run_dev_task
 ```
 
 Example:
@@ -69,6 +72,33 @@ npm run check --workspaces --if-present
 It does not accept arbitrary shell commands.
 
 `workspace.git_status` and `workspace.git_diff` are read-only tools for change awareness. They expose the current workspace status and tracked-file diff so the agent can verify what changed before reporting or requesting checks.
+
+`workspace.detect_development_tools` is read-only. It detects installed command-line tools such as `code`, `git`, `node`, `npm`, `cargo`, `python`, `docker`, and `UnrealEditor`, plus workspace project files such as `package.json`, `Cargo.toml`, `.sln`, `.csproj`, and `.uproject`.
+
+`workspace.open_development_target` requires approval. It can open only workspace-relative files or folders in an approved application:
+
+```text
+vscode
+default
+unreal
+```
+
+Unreal opens are restricted to `.uproject` files inside the configured workspace. This tool launches the target and returns immediately; it does not grant arbitrary shell access.
+
+`workspace.run_dev_task` requires approval and can only run allowlisted development tasks:
+
+```text
+api_check
+desktop_check
+agent_core_check
+all_checks
+api_build
+desktop_build
+desktop_installer_build
+rust_native_check
+```
+
+Each task maps to a fixed command and timeout. The tool returns exit code, stdout, stderr, timeout state, and a summary.
 
 ## Permission Flow
 
@@ -116,4 +146,4 @@ That run-scoped endpoint verifies that the permission belongs to the selected ru
 
 Approvals are one-use and tied to the exact tool input.
 
-ChenkoAI still cannot run shell commands, install packages, or access paths outside the configured workspace through this local tool layer.
+ChenkoAI still cannot run arbitrary shell commands, install packages, or access paths outside the configured workspace through this local tool layer.
