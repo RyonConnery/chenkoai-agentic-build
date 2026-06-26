@@ -72,6 +72,13 @@ Search embedded chunks by meaning:
 
 The search response returns matching chunks, document details, dataset details, and vector distance. Lower distance means a closer match.
 
+The desktop control center includes a Memory Search & Repair panel for production checks:
+
+- Search stored chunks across all datasets or one selected dataset.
+- Inspect chunk sources and match scores before asking the model to answer.
+- Rebuild missing embeddings for all datasets or the selected dataset.
+- Confirm dataset quality counts after scans, restores, and embedding repairs.
+
 ## Next Step
 
 Feed top search results into agent runs so planning and generation can use ChenkoAI memory.

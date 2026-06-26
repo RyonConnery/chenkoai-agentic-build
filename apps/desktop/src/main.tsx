@@ -114,6 +114,12 @@ type MemoryAnswer = {
   results: DataSearchResult[];
 };
 
+type EmbeddingRebuildResult = {
+  provider: string;
+  model: string;
+  embeddedChunks: number;
+};
+
 type MemoryEvaluation = {
   provider: string;
   model: string;
@@ -230,6 +236,10 @@ function App() {
   const [scanResult, setScanResult] = useState<SystemScanResult | undefined>();
   const [memoryQuestion, setMemoryQuestion] = useState("What does this workspace contain?");
   const [memoryAnswer, setMemoryAnswer] = useState<MemoryAnswer | undefined>();
+  const [memorySearchQuery, setMemorySearchQuery] = useState("approved file changes");
+  const [selectedDatasetId, setSelectedDatasetId] = useState("");
+  const [memorySearchResults, setMemorySearchResults] = useState<DataSearchResult[]>([]);
+  const [embeddingRebuild, setEmbeddingRebuild] = useState<EmbeddingRebuildResult | undefined>();
   const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
@@ -429,6 +439,105 @@ function App() {
                     </span>
                   </div>
                 ))}
+              </section>
+            ) : null}
+
+            <div className="section-heading compact-heading">
+              <h2>Memory Search & Repair</h2>
+            </div>
+            <label>
+              Dataset
+              <select
+                value={selectedDatasetId}
+                onChange={(event) => setSelectedDatasetId(event.target.value)}
+              >
+                <option value="">All datasets</option>
+                {datasets.map((dataset) => (
+                  <option key={dataset.id} value={dataset.id}>
+                    {dataset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Search stored chunks
+              <textarea
+                value={memorySearchQuery}
+                onChange={(event) => setMemorySearchQuery(event.target.value)}
+              />
+            </label>
+            <div className="button-row">
+              <button
+                disabled={busy || !memorySearchQuery.trim()}
+                onClick={() =>
+                  void runAction(async () => {
+                    const response = await apiPost<{
+                      provider: string;
+                      model: string;
+                      results: DataSearchResult[];
+                    }>("/data/search", {
+                      query: memorySearchQuery,
+                      datasetId: selectedDatasetId || undefined,
+                      limit: 5,
+                    });
+                    setMemorySearchResults(response.results);
+                    setMessage(
+                      `Memory search returned ${response.results.length} stored chunks.`,
+                    );
+                    return selectedRunId || undefined;
+                  })
+                }
+              >
+                Search Chunks
+              </button>
+              <button
+                className="secondary"
+                disabled={busy || (dataQuality?.totals.unembeddedChunkCount ?? 0) === 0}
+                onClick={() =>
+                  void runAction(async () => {
+                    const result = await apiPost<EmbeddingRebuildResult>(
+                      "/data/embeddings/rebuild",
+                      {
+                        datasetId: selectedDatasetId || undefined,
+                        limit: 250,
+                      },
+                    );
+                    setEmbeddingRebuild(result);
+                    setMessage(
+                      `Embedded ${result.embeddedChunks} chunks with ${result.model || result.provider}.`,
+                    );
+                    return selectedRunId || undefined;
+                  })
+                }
+              >
+                Rebuild Missing Embeddings
+              </button>
+            </div>
+            {embeddingRebuild ? (
+              <p className="muted">
+                Last rebuild: {embeddingRebuild.embeddedChunks} chunks |{" "}
+                {embeddingRebuild.model || embeddingRebuild.provider}
+              </p>
+            ) : null}
+            {memorySearchResults.length > 0 ? (
+              <section className="memory-search-results">
+                <h3>Chunk Matches</h3>
+                <div className="memory-source-list">
+                  {memorySearchResults.map((result, index) => (
+                    <article className="memory-source" key={result.chunk.id}>
+                      <div className="memory-source-header">
+                        <strong>
+                          [{index + 1}] {memorySourceTitle(result)}
+                        </strong>
+                        <span>{memorySourceMatch(result.distance)}</span>
+                      </div>
+                      <p className="memory-source-meta">
+                        {result.dataset.name} | {result.document.sourceType}
+                      </p>
+                      <p>{memorySourceSnippet(result.chunk.content)}</p>
+                    </article>
+                  ))}
+                </div>
               </section>
             ) : null}
 
