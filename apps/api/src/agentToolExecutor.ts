@@ -124,6 +124,8 @@ function summarizeToolOutput(value: unknown): string | undefined {
     timedOut?: unknown;
     stdout?: unknown;
     stderr?: unknown;
+    changedFiles?: unknown;
+    diff?: unknown;
   };
 
   if (typeof output.summary === "string") {
@@ -148,6 +150,14 @@ function summarizeToolOutput(value: unknown): string | undefined {
   }
 
   if (typeof output.command === "string") {
+    if (output.command === "git status --short" && Array.isArray(output.changedFiles)) {
+      return `Git status found ${output.changedFiles.length} changed entries.`;
+    }
+
+    if (output.command === "git diff --" && typeof output.diff === "string") {
+      return `Git diff returned ${output.diff.length} characters${output.truncated ? " and was truncated" : ""}.`;
+    }
+
     const status =
       output.exitCode === 0 && output.timedOut !== true ? "passed" : "failed";
     const stderr = typeof output.stderr === "string" && output.stderr.trim() ? " Stderr captured." : "";

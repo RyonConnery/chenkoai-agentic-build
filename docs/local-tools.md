@@ -35,6 +35,8 @@ workspace.list_files
 workspace.read_text_file
 workspace.write_text_file
 workspace.run_project_check
+workspace.git_status
+workspace.git_diff
 ```
 
 Example:
@@ -65,6 +67,8 @@ npm run check --workspaces --if-present
 ```
 
 It does not accept arbitrary shell commands.
+
+`workspace.git_status` and `workspace.git_diff` are read-only tools for change awareness. They expose the current workspace status and tracked-file diff so the agent can verify what changed before reporting or requesting checks.
 
 ## Permission Flow
 

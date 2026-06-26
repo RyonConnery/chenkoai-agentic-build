@@ -141,6 +141,31 @@ export class LocalToolRegistry {
           },
         },
       },
+      {
+        name: "workspace.git_status",
+        description: "Read the current Git status for the configured workspace.",
+        destructive: false,
+        requiresApproval: false,
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "workspace.git_diff",
+        description: "Read the current Git diff for the configured workspace.",
+        destructive: false,
+        requiresApproval: false,
+        inputSchema: {
+          type: "object",
+          properties: {
+            maxCharacters: {
+              type: "number",
+              description: "Maximum diff characters to return. Defaults to 12000.",
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -190,6 +215,22 @@ export class LocalToolRegistry {
           name: request.name,
           ok: true,
           output: await this.#runProjectCheck(readProjectCheckTarget(request.input.target)),
+        };
+      }
+
+      if (request.name === "workspace.git_status") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#gitStatus(),
+        };
+      }
+
+      if (request.name === "workspace.git_diff") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#gitDiff(readNumber(request.input.maxCharacters, 12_000)),
         };
       }
 
@@ -323,6 +364,40 @@ export class LocalToolRegistry {
         result.exitCode === 0 && !result.timedOut
           ? `Project check passed for ${target}.`
           : `Project check failed for ${target} with exit code ${result.exitCode}.`,
+    };
+  }
+
+  async #gitStatus(): Promise<unknown> {
+    const result = await runProcess("git", ["status", "--short"], this.#workspaceRoot, 30_000);
+
+    return {
+      command: "git status --short",
+      exitCode: result.exitCode,
+      stdout: trimOutput(result.stdout),
+      stderr: trimOutput(result.stderr),
+      changedFiles: parseGitStatus(result.stdout),
+      summary:
+        result.exitCode === 0
+          ? `Git status found ${parseGitStatus(result.stdout).length} changed entries.`
+          : `Git status failed with exit code ${result.exitCode}.`,
+    };
+  }
+
+  async #gitDiff(maxCharacters: number): Promise<unknown> {
+    const result = await runProcess("git", ["diff", "--"], this.#workspaceRoot, 30_000);
+    const limit = Math.max(1, Math.min(60_000, maxCharacters));
+    const diff = result.stdout.slice(0, limit);
+
+    return {
+      command: "git diff --",
+      exitCode: result.exitCode,
+      truncated: result.stdout.length > limit,
+      diff,
+      stderr: trimOutput(result.stderr),
+      summary:
+        result.exitCode === 0
+          ? `Git diff returned ${diff.length} characters${result.stdout.length > limit ? " and was truncated" : ""}.`
+          : `Git diff failed with exit code ${result.exitCode}.`,
     };
   }
 
@@ -505,6 +580,17 @@ async function runProcess(
 function trimOutput(value: string): string {
   const limit = 8_000;
   return value.length > limit ? `${value.slice(0, limit)}\n... output truncated ...` : value;
+}
+
+function parseGitStatus(stdout: string): { status: string; path: string }[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .map((line) => ({
+      status: line.slice(0, 2).trim(),
+      path: line.slice(3),
+    }));
 }
 
 function toWorkspaceRelativePath(workspaceRoot: string, target: string): string {
