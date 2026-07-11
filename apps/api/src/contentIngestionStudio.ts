@@ -9,12 +9,15 @@ const textFileExtensions = new Set([
   ".cpp",
   ".cs",
   ".css",
+  ".cfg",
+  ".csv",
   ".example",
   ".h",
   ".html",
   ".js",
   ".json",
   ".jsx",
+  ".log",
   ".md",
   ".mjs",
   ".py",
@@ -24,6 +27,8 @@ const textFileExtensions = new Set([
   ".ts",
   ".tsx",
   ".txt",
+  ".tsv",
+  ".xml",
   ".yml",
   ".yaml",
 ]);
@@ -72,6 +77,7 @@ export type ContentIngestionStudioResult = {
   documentCount: number;
   chunkCount: number;
   embeddedChunks: number;
+  failedEmbeddings: number;
   skippedSources: ContentIngestionStudioSkippedSource[];
   embeddingProvider: string;
   embeddingModel: string;
@@ -110,6 +116,7 @@ export async function runContentIngestionStudio(
   const skippedSources = [...sources.skippedSources];
   let chunkCount = 0;
   let embeddedChunks = 0;
+  let failedEmbeddings = 0;
   let embeddingModel = "";
   let dataset: DataDataset | undefined;
 
@@ -139,10 +146,18 @@ export async function runContentIngestionStudio(
     chunkCount += ingestResult.chunks.length;
 
     for (const chunk of ingestResult.chunks) {
-      const embedding = await deps.embeddingProvider.embed(chunk.content);
-      embeddingModel = embedding.model;
-      await deps.dataStore.saveChunkEmbedding(chunk.id, embedding.embedding, embedding.model);
-      embeddedChunks += 1;
+      try {
+        const embedding = await deps.embeddingProvider.embed(chunk.content);
+        embeddingModel = embedding.model;
+        await deps.dataStore.saveChunkEmbedding(chunk.id, embedding.embedding, embedding.model);
+        embeddedChunks += 1;
+      } catch (error) {
+        failedEmbeddings += 1;
+        skippedSources.push({
+          source: source.sourceUri ?? source.title,
+          reason: `Embedding failed: ${formatError(error)}`,
+        });
+      }
     }
   }
 
@@ -151,13 +166,15 @@ export async function runContentIngestionStudio(
   }
 
   const evaluationQuery = request.evaluationQuery || request.title;
-  const queryEmbedding = await deps.embeddingProvider.embed(evaluationQuery);
-  const results = await deps.dataStore.searchChunks({
-    embedding: queryEmbedding.embedding,
-    embeddingModel: queryEmbedding.model,
-    datasetId: dataset.id,
-    limit: 6,
-  });
+  const queryEmbedding = await deps.embeddingProvider.embed(evaluationQuery).catch(() => undefined);
+  const results = queryEmbedding
+    ? await deps.dataStore.searchChunks({
+        embedding: queryEmbedding.embedding,
+        embeddingModel: queryEmbedding.model,
+        datasetId: dataset.id,
+        limit: 6,
+      })
+    : [];
   const quality = await deps.dataStore.getQualitySummary();
   const datasetQuality = quality.datasets.find((candidate) => candidate.id === dataset.id);
   const retrievalScore = scoreRetrieval(results);
@@ -174,9 +191,10 @@ export async function runContentIngestionStudio(
     documentCount: documents.length,
     chunkCount,
     embeddedChunks,
+    failedEmbeddings,
     skippedSources,
     embeddingProvider: deps.embeddingProvider.provider,
-    embeddingModel: embeddingModel || queryEmbedding.model,
+    embeddingModel: embeddingModel || queryEmbedding?.model || "",
     evaluationQuery,
     retrievalScore,
     readyForAgentMemory,
@@ -282,7 +300,7 @@ async function loadSourceDocuments(
     } catch (error) {
       skippedSources.push({
         source: path.relative(workspaceRoot, file) || ".",
-        reason: error instanceof Error ? error.message : "Unable to read file",
+        reason: formatError(error),
       });
     }
   }
@@ -338,7 +356,7 @@ async function collectFiles(
 
   while (queue.length > 0 && results.length < maxCandidates) {
     const directory = queue.shift()!;
-    const entries = await fs.readdir(directory, { withFileTypes: true });
+    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
 
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (results.length >= maxCandidates) {
@@ -367,6 +385,10 @@ async function collectFiles(
   }
 
   return results.sort((a, b) => a.localeCompare(b));
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 function resolveWorkspacePath(workspaceRoot: string, inputPath: string): string {

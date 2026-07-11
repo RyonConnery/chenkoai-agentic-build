@@ -8,6 +8,8 @@ const textFileExtensions = new Set([
   ".cpp",
   ".cs",
   ".css",
+  ".cfg",
+  ".csv",
   ".env",
   ".example",
   ".h",
@@ -15,6 +17,7 @@ const textFileExtensions = new Set([
   ".js",
   ".json",
   ".jsx",
+  ".log",
   ".md",
   ".mjs",
   ".py",
@@ -24,6 +27,8 @@ const textFileExtensions = new Set([
   ".ts",
   ".tsx",
   ".txt",
+  ".tsv",
+  ".xml",
   ".yml",
   ".yaml",
 ]);
@@ -62,9 +67,11 @@ export type SystemScanResult = {
   ingestedDocuments: number;
   skippedFiles: number;
   embeddedChunks: number;
+  failedEmbeddings: number;
   replacedDocuments: number;
   replacedChunks: number;
   truncated: boolean;
+  warnings: string[];
 };
 
 export class SystemScanner {
@@ -104,6 +111,7 @@ export class SystemScanner {
       .slice(0, maxFiles);
     let ingestedDocuments = 0;
     let skippedFiles = 0;
+    const warnings: string[] = [];
     const replaced =
       mode === "replace"
         ? await this.#dataStore.deleteDatasetByName(systemDatasetName)
@@ -128,31 +136,44 @@ export class SystemScanner {
 
     for (const file of files) {
       const absolutePath = path.join(this.#workspaceRoot, file);
-      const stat = await fs.stat(absolutePath);
+      const stat = await fs.stat(absolutePath).catch((error: unknown) => {
+        warnings.push(`Skipped ${file}: ${formatError(error)}`);
+        return undefined;
+      });
+      if (!stat) {
+        skippedFiles += 1;
+        continue;
+      }
       if (!stat.isFile() || stat.size > maxFileBytes) {
         skippedFiles += 1;
         continue;
       }
 
-      const text = await fs.readFile(absolutePath, "utf8");
-      await this.#dataStore.ingestText({
-        datasetName: systemDatasetName,
-        title: file,
-        sourceType: "file",
-        sourceUri: file,
-        text,
-        metadata: {
-          relativePath: file,
-          bytes: stat.size,
-          scannedAt: new Date().toISOString(),
-        },
-      });
-      ingestedDocuments += 1;
+      try {
+        const text = await fs.readFile(absolutePath, "utf8");
+        await this.#dataStore.ingestText({
+          datasetName: systemDatasetName,
+          title: file,
+          sourceType: "file",
+          sourceUri: file,
+          text,
+          metadata: {
+            relativePath: file,
+            bytes: stat.size,
+            scannedAt: new Date().toISOString(),
+          },
+        });
+        ingestedDocuments += 1;
+      } catch (error) {
+        skippedFiles += 1;
+        warnings.push(`Skipped ${file}: ${formatError(error)}`);
+      }
     }
 
     const datasets = await this.#dataStore.listDatasets();
     const datasetId = datasets.find((dataset) => dataset.name === systemDatasetName)?.id;
     let embeddedChunks = 0;
+    let failedEmbeddings = 0;
 
     for (;;) {
       const chunks = await this.#dataStore.listChunksNeedingEmbedding(100, datasetId);
@@ -160,10 +181,21 @@ export class SystemScanner {
         break;
       }
 
+      let batchEmbeddedChunks = 0;
       for (const chunk of chunks) {
-        const response = await this.#embeddingProvider.embed(chunk.content);
-        await this.#dataStore.saveChunkEmbedding(chunk.id, response.embedding, response.model);
-        embeddedChunks += 1;
+        try {
+          const response = await this.#embeddingProvider.embed(chunk.content);
+          await this.#dataStore.saveChunkEmbedding(chunk.id, response.embedding, response.model);
+          embeddedChunks += 1;
+          batchEmbeddedChunks += 1;
+        } catch (error) {
+          failedEmbeddings += 1;
+          warnings.push(`Embedding failed for chunk ${chunk.id}: ${formatError(error)}`);
+        }
+      }
+
+      if (batchEmbeddedChunks === 0) {
+        break;
       }
     }
 
@@ -175,9 +207,11 @@ export class SystemScanner {
       ingestedDocuments,
       skippedFiles,
       embeddedChunks,
+      failedEmbeddings,
       replacedDocuments: replaced.documentCount,
       replacedChunks: replaced.chunkCount,
       truncated: files.length >= maxFiles,
+      warnings: warnings.slice(0, 25),
     };
   }
 
@@ -188,7 +222,7 @@ export class SystemScanner {
     while (queue.length > 0 && results.length < maxFiles) {
       const directory = queue.shift()!;
       const absoluteDirectory = path.join(this.#workspaceRoot, directory);
-      const entries = await fs.readdir(absoluteDirectory, { withFileTypes: true });
+      const entries = await fs.readdir(absoluteDirectory, { withFileTypes: true }).catch(() => []);
 
       for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
         if (results.length >= maxFiles) {
@@ -247,6 +281,10 @@ export class SystemScanner {
       ...sections,
     ].join("\n\n");
   }
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 function clamp(value: number, min: number, max: number): number {

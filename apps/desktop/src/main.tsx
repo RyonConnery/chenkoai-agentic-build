@@ -140,6 +140,7 @@ type ContentIngestionStudioResult = {
   documentCount: number;
   chunkCount: number;
   embeddedChunks: number;
+  failedEmbeddings: number;
   skippedSources: { source: string; reason: string }[];
   embeddingProvider: string;
   embeddingModel: string;
@@ -190,9 +191,11 @@ type SystemScanResult = {
   ingestedDocuments: number;
   skippedFiles: number;
   embeddedChunks: number;
+  failedEmbeddings: number;
   replacedDocuments: number;
   replacedChunks: number;
   truncated: boolean;
+  warnings: string[];
 };
 
 type ModelSettings = {
@@ -418,8 +421,8 @@ function App() {
       setMemoryEvaluation(undefined);
       setMessage(
         mode === "replace"
-          ? `Rebuilt memory dataset with ${result.ingestedDocuments} documents and ${result.embeddedChunks} chunks.`
-          : `System scan checked ${result.scannedFiles} files and embedded ${result.embeddedChunks} chunks.`,
+          ? `Rebuilt memory dataset with ${result.ingestedDocuments} documents, ${result.embeddedChunks} embedded chunks, and ${result.failedEmbeddings} embedding failures.`
+          : `System scan checked ${result.scannedFiles} files, stored ${result.ingestedDocuments} documents, embedded ${result.embeddedChunks} chunks, and had ${result.failedEmbeddings} embedding failures.`,
       );
       return selectedRunId || undefined;
     });
@@ -551,10 +554,15 @@ function App() {
               <p className="muted">
                 Last scan: {scanResult.mode} mode, {scanResult.scannedFiles} files checked,{" "}
                 {scanResult.ingestedDocuments} documents ingested, {scanResult.embeddedChunks} chunks embedded,{" "}
-                {scanResult.skippedFiles} skipped.
+                {scanResult.failedEmbeddings} embedding failures, {scanResult.skippedFiles} skipped.
                 {scanResult.mode === "replace"
                   ? ` Replaced ${scanResult.replacedDocuments} old documents and ${scanResult.replacedChunks} old chunks.`
                   : ""}
+              </p>
+            ) : null}
+            {scanResult?.warnings?.length ? (
+              <p className="warning">
+                Scan warnings: {scanResult.warnings.slice(0, 3).join(" | ")}
               </p>
             ) : null}
             {dataQuality ? (
@@ -718,6 +726,7 @@ function App() {
                   <Metric label="Documents" value={String(ingestionResult.documentCount)} />
                   <Metric label="Chunks" value={String(ingestionResult.chunkCount)} />
                   <Metric label="Embedded" value={String(ingestionResult.embeddedChunks)} />
+                  <Metric label="Embed Fail" value={String(ingestionResult.failedEmbeddings)} />
                   <Metric label="Score" value={`${ingestionResult.retrievalScore}%`} />
                   <Metric
                     label="Duplicates"
