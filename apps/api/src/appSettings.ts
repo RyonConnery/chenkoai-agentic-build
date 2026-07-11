@@ -203,6 +203,7 @@ export async function saveWorkspaceSettings(
 
   await fs.writeFile(settingsPath(), serializeEnv(next), "utf8");
   Object.assign(process.env, next);
+  process.env.CHENKOAI_ACTIVE_WORKSPACE_ROOT = workspaceRoot;
   return readWorkspaceSettings();
 }
 

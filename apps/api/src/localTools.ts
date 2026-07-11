@@ -94,7 +94,7 @@ type LocalToolRegistryOptions = {
 };
 
 export class LocalToolRegistry {
-  readonly #workspaceRoot: string;
+  readonly #fallbackWorkspaceRoot: string;
   readonly #permissionStore: ToolPermissionStore;
   readonly #dataStore?: DataStore;
   readonly #embeddingProvider?: EmbeddingProviderAdapter;
@@ -103,12 +103,16 @@ export class LocalToolRegistry {
     permissionStore: ToolPermissionStore,
     options: LocalToolRegistryOptions = {},
   ) {
-    this.#workspaceRoot = path.resolve(
+    this.#fallbackWorkspaceRoot = path.resolve(
       options.workspaceRoot ?? process.env.CHENKOAI_WORKSPACE_ROOT ?? defaultWorkspaceRoot,
     );
     this.#permissionStore = permissionStore;
     this.#dataStore = options.dataStore;
     this.#embeddingProvider = options.embeddingProvider;
+  }
+
+  get #workspaceRoot(): string {
+    return path.resolve(process.env.CHENKOAI_WORKSPACE_ROOT ?? this.#fallbackWorkspaceRoot);
   }
 
   list(): LocalToolDefinition[] {

@@ -68,7 +68,7 @@ export type SystemScanResult = {
 };
 
 export class SystemScanner {
-  readonly #workspaceRoot: string;
+  readonly #fallbackWorkspaceRoot: string;
   readonly #dataStore: DataStore;
   readonly #embeddingProvider: EmbeddingProviderAdapter;
 
@@ -77,9 +77,13 @@ export class SystemScanner {
     embeddingProvider: EmbeddingProviderAdapter;
     workspaceRoot?: string;
   }) {
-    this.#workspaceRoot = path.resolve(input.workspaceRoot ?? process.cwd());
+    this.#fallbackWorkspaceRoot = path.resolve(input.workspaceRoot ?? process.cwd());
     this.#dataStore = input.dataStore;
     this.#embeddingProvider = input.embeddingProvider;
+  }
+
+  get #workspaceRoot(): string {
+    return path.resolve(process.env.CHENKOAI_WORKSPACE_ROOT ?? this.#fallbackWorkspaceRoot);
   }
 
   profile(): { workspaceRoot: string; datasetName: string } {

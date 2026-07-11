@@ -65,10 +65,7 @@ const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
 const embeddingProvider = createDynamicEmbeddingProviderAdapter();
 const toolPermissions = createToolPermissionStore();
-const localTools = new LocalToolRegistry(toolPermissions, {
-  dataStore,
-  embeddingProvider,
-});
+const localTools = createLocalTools();
 const modelProvider = createDynamicModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);
@@ -81,11 +78,6 @@ const agentPlanner = new AgentPlanner(
   runtimeStatusProvider,
 );
 const agentRunReporter = new AgentRunReporter(agentRunStore, toolPermissions);
-const systemScanner = new SystemScanner({
-  dataStore,
-  embeddingProvider,
-  workspaceRoot: process.env.CHENKOAI_WORKSPACE_ROOT,
-});
 const agentRuntime = new AgentRuntime(
   agentRunStore,
   modelProvider,
@@ -192,12 +184,12 @@ server.post<{ Body: { fileName?: string } }>("/storage/backups/restore", async (
   return await restoreStorageBackup(requireDatabaseUrl(), request.body?.fileName ?? "");
 });
 
-server.get("/system/profile", async () => systemScanner.profile());
+server.get("/system/profile", async () => createSystemScanner().profile());
 
 server.post<{ Body: { maxFiles?: number; maxFileBytes?: number; mode?: "append" | "replace" } }>(
   "/system/scan",
   async (request, reply) => {
-    const result = await systemScanner.scan(request.body ?? {});
+    const result = await createSystemScanner().scan(request.body ?? {});
     return reply.code(201).send(result);
   },
 );
@@ -211,7 +203,7 @@ server.get("/tools", async () => ({
 }));
 
 server.post<{ Body: ToolExecuteRequest }>("/tools/execute", async (request) => {
-  return await localTools.execute(request.body);
+  return await createLocalTools().execute(request.body);
 });
 
 server.get("/tools/permissions", async () => ({
@@ -640,6 +632,22 @@ function createDynamicEmbeddingProviderAdapter(): EmbeddingProviderAdapter {
       return await createEmbeddingProviderAdapter().embed(input);
     },
   };
+}
+
+function createLocalTools(): LocalToolRegistry {
+  return new LocalToolRegistry(toolPermissions, {
+    dataStore,
+    embeddingProvider,
+    workspaceRoot: process.env.CHENKOAI_WORKSPACE_ROOT,
+  });
+}
+
+function createSystemScanner(): SystemScanner {
+  return new SystemScanner({
+    dataStore,
+    embeddingProvider,
+    workspaceRoot: process.env.CHENKOAI_WORKSPACE_ROOT,
+  });
 }
 
 function formatAnswerContext(

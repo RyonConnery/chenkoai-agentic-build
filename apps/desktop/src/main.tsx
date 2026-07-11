@@ -299,6 +299,7 @@ function App() {
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
   const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings | undefined>();
   const [workspaceRootInput, setWorkspaceRootInput] = useState("");
+  const workspaceSettingsDirty = useRef(false);
   const [storageBackups, setStorageBackups] = useState<StorageBackupSummary[]>([]);
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const modelSettingsDirty = useRef(false);
@@ -358,7 +359,9 @@ function App() {
       }
       setStorageSettings(storagePayload);
       setWorkspaceSettings(workspacePayload);
-      setWorkspaceRootInput(workspacePayload.configuredWorkspaceRoot);
+      if (!workspaceSettingsDirty.current) {
+        setWorkspaceRootInput(workspacePayload.configuredWorkspaceRoot);
+      }
       setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
       setPermissions(permissionPayload.permissions);
@@ -376,6 +379,7 @@ function App() {
       setModelSettings(undefined);
       setStorageSettings(undefined);
       setWorkspaceSettings(undefined);
+      workspaceSettingsDirty.current = false;
       setWorkspaceRootInput("");
       setStorageBackups([]);
       setDataQuality(undefined);
@@ -662,19 +666,12 @@ function App() {
                 disabled={busy || !contentIngestionReady()}
                 onClick={() =>
                   void runAction(async () => {
-                    const result = await apiPost<ToolExecutionResult>("/tools/execute", {
-                      name: "workspace.content_ingestion_studio",
-                      input: createContentIngestionInput(),
-                    });
-                    if (result.permissionRequest) {
-                      setIngestionPermission(result.permissionRequest);
-                      setMessage("Content ingestion approval requested. Approve it below to run.");
-                    } else if (result.ok && result.output) {
-                      applyContentIngestionResult(result.output as ContentIngestionStudioResult);
-                      setMessage("Content Ingestion Studio completed.");
-                    } else {
-                      setMessage(result.error ?? "Content ingestion failed.");
-                    }
+                    const result = await apiPost<ContentIngestionStudioResult>(
+                      "/data/ingestion/studio",
+                      createContentIngestionInput(),
+                    );
+                    applyContentIngestionResult(result);
+                    setMessage("Content Ingestion Studio completed.");
                     return selectedRunId || undefined;
                   })
                 }
@@ -1171,7 +1168,10 @@ function App() {
                   Project folder to scan and control
                   <input
                     value={workspaceRootInput}
-                    onChange={(event) => setWorkspaceRootInput(event.target.value)}
+                    onChange={(event) => {
+                      workspaceSettingsDirty.current = true;
+                      setWorkspaceRootInput(event.target.value);
+                    }}
                   />
                 </label>
                 <button
@@ -1184,12 +1184,13 @@ function App() {
                           workspaceRoot: workspaceRootInput,
                         },
                       );
+                      workspaceSettingsDirty.current = false;
                       setWorkspaceSettings(saved);
                       setWorkspaceRootInput(saved.configuredWorkspaceRoot);
                       setMessage(
                         saved.restartRequired
                           ? "Workspace saved. Restart ChenkoAI so scans and tools use the new project folder."
-                          : "Workspace is already active.",
+                          : "Workspace saved and active for scans, ingestion, and tools.",
                       );
                       return selectedRunId || undefined;
                     })
