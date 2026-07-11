@@ -73,6 +73,11 @@ fn start_local_api() -> Option<Child> {
         command.env(key, value);
     }
 
+    // The React UI is currently compiled against 127.0.0.1:8787.
+    // Force the sidecar API to the same port after loading local settings so a
+    // stale CHENKOAI_API_PORT from dev/smoke-test sessions cannot strand the UI.
+    command.env("CHENKOAI_API_PORT", "8787");
+
     command.spawn().ok()
 }
 
