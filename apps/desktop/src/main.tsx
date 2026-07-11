@@ -300,6 +300,7 @@ function App() {
   const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings | undefined>();
   const [workspaceRootInput, setWorkspaceRootInput] = useState("");
   const workspaceSettingsDirty = useRef(false);
+  const workspaceSettingsLoaded = useRef(false);
   const [storageBackups, setStorageBackups] = useState<StorageBackupSummary[]>([]);
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const modelSettingsDirty = useRef(false);
@@ -359,8 +360,9 @@ function App() {
       }
       setStorageSettings(storagePayload);
       setWorkspaceSettings(workspacePayload);
-      if (!workspaceSettingsDirty.current) {
+      if (!workspaceSettingsLoaded.current && !workspaceSettingsDirty.current) {
         setWorkspaceRootInput(workspacePayload.configuredWorkspaceRoot);
+        workspaceSettingsLoaded.current = true;
       }
       setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
@@ -379,8 +381,6 @@ function App() {
       setModelSettings(undefined);
       setStorageSettings(undefined);
       setWorkspaceSettings(undefined);
-      workspaceSettingsDirty.current = false;
-      setWorkspaceRootInput("");
       setStorageBackups([]);
       setDataQuality(undefined);
       setSystemProfile(undefined);
@@ -1167,6 +1167,7 @@ function App() {
                 <label>
                   Project folder to scan and control
                   <input
+                    placeholder="F:\ChenkoAI\YourProject"
                     value={workspaceRootInput}
                     onChange={(event) => {
                       workspaceSettingsDirty.current = true;
@@ -1174,6 +1175,10 @@ function App() {
                     }}
                   />
                 </label>
+                <p className="muted">
+                  Use a full folder path with drive letter, such as F:\ChenkoAI\YourProject.
+                  Partial paths are rejected instead of being converted to C:.
+                </p>
                 <button
                   disabled={busy || !workspaceRootInput.trim()}
                   onClick={() =>
@@ -1185,6 +1190,7 @@ function App() {
                         },
                       );
                       workspaceSettingsDirty.current = false;
+                      workspaceSettingsLoaded.current = true;
                       setWorkspaceSettings(saved);
                       setWorkspaceRootInput(saved.configuredWorkspaceRoot);
                       setMessage(
@@ -1747,6 +1753,11 @@ async function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
 
 async function readResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
+    const payload = await response.json().catch(() => undefined);
+    if (payload && typeof payload === "object" && "error" in payload) {
+      throw new Error(String(payload.error));
+    }
+
     throw new Error(`API request failed with status ${response.status}`);
   }
 

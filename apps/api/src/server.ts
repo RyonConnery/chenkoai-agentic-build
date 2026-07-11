@@ -137,11 +137,17 @@ server.get("/settings/storage", async () => readStorageSettings());
 server.get("/settings/workspace", async () => readWorkspaceSettings());
 
 server.post<{ Body: WorkspaceSettingsMutation }>("/settings/workspace", async (request, reply) => {
-  const settings = await saveWorkspaceSettings(request.body ?? {});
-  return reply.code(201).send({
-    ...settings,
-    restartRequired: settings.configuredWorkspaceRoot !== settings.activeWorkspaceRoot,
-  });
+  try {
+    const settings = await saveWorkspaceSettings(request.body ?? {});
+    return reply.code(201).send({
+      ...settings,
+      restartRequired: settings.configuredWorkspaceRoot !== settings.activeWorkspaceRoot,
+    });
+  } catch (error) {
+    return reply.code(400).send({
+      error: error instanceof Error ? error.message : "Invalid workspace folder",
+    });
+  }
 });
 
 server.post("/settings/storage/reconnect", async () => {

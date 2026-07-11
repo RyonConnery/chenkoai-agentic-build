@@ -195,7 +195,7 @@ export async function saveWorkspaceSettings(
   input: WorkspaceSettingsMutation,
 ): Promise<WorkspaceSettingsResponse> {
   const existing = await readFileSettings();
-  const workspaceRoot = path.resolve(readString(input.workspaceRoot, process.cwd()));
+  const workspaceRoot = await readWorkspaceRoot(input.workspaceRoot);
   const next: Record<string, string> = {
     ...existing,
     CHENKOAI_WORKSPACE_ROOT: workspaceRoot,
@@ -280,4 +280,30 @@ function readChoice(value: unknown, allowed: string[], fallback: string): string
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+async function readWorkspaceRoot(value: unknown): Promise<string> {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Workspace folder is required");
+  }
+
+  const candidate = value.trim().replace(/\//g, "\\");
+  if (!path.win32.isAbsolute(candidate) && !path.posix.isAbsolute(candidate)) {
+    throw new Error("Workspace folder must be a full absolute path, for example F:\\ChenkoAI\\Project");
+  }
+
+  const normalized = path.normalize(candidate);
+  const stat = await fs.stat(normalized).catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      throw new Error("Workspace folder does not exist");
+    }
+
+    throw error;
+  });
+
+  if (!stat.isDirectory()) {
+    throw new Error("Workspace path must be a folder");
+  }
+
+  return normalized;
 }
