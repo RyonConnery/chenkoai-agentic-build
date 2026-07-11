@@ -4,10 +4,13 @@ import path from "node:path";
 import {
   normalizeToolExecuteRequest,
   type LocalToolDefinition,
-  type DataDocument,
   type ToolExecuteRequest,
   type ToolExecutionResult,
 } from "@chenkoai/agent-core";
+import {
+  runContentIngestionStudio,
+  type ContentIngestionSourceKind,
+} from "./contentIngestionStudio.js";
 import type { DataStore } from "./dataStore.js";
 import type { EmbeddingProviderAdapter } from "./embeddingProvider.js";
 import type { ToolPermissionStore } from "./toolPermissions.js";
@@ -256,39 +259,52 @@ export class LocalToolRegistry {
         },
       },
       {
-        name: "workspace.ingest_selected_content",
+        name: "workspace.content_ingestion_studio",
         description:
-          "Store selected user-approved content as durable ChenkoAI memory, chunk it, embed it, and return retrieval evidence.",
+          "Ingest chosen content into durable ChenkoAI memory, chunk it, embed it, evaluate retrieval quality, and report readiness for agent memory.",
         destructive: false,
         requiresApproval: true,
         inputSchema: {
           type: "object",
-          required: ["datasetName", "title", "text"],
+          required: ["datasetName", "title", "sourceKind"],
           properties: {
             datasetName: {
               type: "string",
-              description: "Dataset where the selected content should be stored.",
+              description: "Dataset where the content should be stored.",
             },
             title: {
               type: "string",
-              description: "Document title for the selected content.",
+              description: "Document title or folder ingestion label.",
+            },
+            sourceKind: {
+              type: "string",
+              enum: ["pasted_text", "workspace_file", "workspace_folder"],
+              description: "Content source to ingest.",
             },
             text: {
               type: "string",
-              description: "Selected content to store as durable memory.",
+              description: "Pasted text to store when sourceKind is pasted_text.",
             },
-            sourceType: {
+            path: {
               type: "string",
-              enum: ["manual", "file", "url", "api"],
-              description: "Source category. Defaults to manual.",
+              description:
+                "Workspace-relative file or folder path when sourceKind is workspace_file or workspace_folder.",
             },
             sourceUri: {
               type: "string",
-              description: "Optional source reference, file, URL, or tool identifier.",
+              description: "Optional source reference for pasted text.",
             },
             evaluationQuery: {
               type: "string",
               description: "Optional query used to verify retrieval after ingestion.",
+            },
+            maxFiles: {
+              type: "number",
+              description: "Maximum files to ingest from a folder. Defaults to 25.",
+            },
+            maxFileBytes: {
+              type: "number",
+              description: "Maximum bytes per file. Defaults to 160000.",
             },
           },
         },
@@ -389,17 +405,20 @@ export class LocalToolRegistry {
         };
       }
 
-      if (request.name === "workspace.ingest_selected_content") {
+      if (request.name === "workspace.content_ingestion_studio") {
         return {
           name: request.name,
           ok: true,
-          output: await this.#ingestSelectedContent({
+          output: await this.#runContentIngestionStudio({
             datasetName: readString(request.input.datasetName),
             title: readString(request.input.title),
-            text: readString(request.input.text),
-            sourceType: readDataSourceType(request.input.sourceType, "manual"),
+            sourceKind: readContentIngestionSourceKind(request.input.sourceKind),
+            text: readOptionalString(request.input.text),
+            path: readOptionalString(request.input.path),
             sourceUri: readOptionalString(request.input.sourceUri),
             evaluationQuery: readOptionalString(request.input.evaluationQuery),
+            maxFiles: readNumber(request.input.maxFiles, 25),
+            maxFileBytes: readNumber(request.input.maxFileBytes, 160_000),
           }),
         };
       }
@@ -652,66 +671,26 @@ export class LocalToolRegistry {
     };
   }
 
-  async #ingestSelectedContent(input: {
+  async #runContentIngestionStudio(input: {
     datasetName: string;
     title: string;
-    text: string;
-    sourceType: DataDocument["sourceType"];
+    sourceKind: ContentIngestionSourceKind;
+    text?: string;
+    path?: string;
     sourceUri?: string;
     evaluationQuery?: string;
+    maxFiles?: number;
+    maxFileBytes?: number;
   }): Promise<unknown> {
     if (!this.#dataStore || !this.#embeddingProvider) {
-      throw new Error("Selected content ingestion is not configured for this tool registry");
+      throw new Error("Content Ingestion Studio is not configured for this tool registry");
     }
 
-    const ingestResult = await this.#dataStore.ingestText({
-      datasetName: input.datasetName,
-      title: input.title,
-      sourceType: input.sourceType,
-      sourceUri: input.sourceUri,
-      text: input.text,
-      metadata: {
-        ingestionMode: "selected-content-tool",
-        selectedAt: new Date().toISOString(),
-        source: "workspace.ingest_selected_content",
-      },
+    return await runContentIngestionStudio(input, {
+      dataStore: this.#dataStore,
+      embeddingProvider: this.#embeddingProvider,
+      workspaceRoot: this.#workspaceRoot,
     });
-    let embeddedChunks = 0;
-    let embeddingModel = "";
-
-    for (const chunk of ingestResult.chunks) {
-      const embedding = await this.#embeddingProvider.embed(chunk.content);
-      embeddingModel = embedding.model;
-      await this.#dataStore.saveChunkEmbedding(chunk.id, embedding.embedding, embedding.model);
-      embeddedChunks += 1;
-    }
-
-    const evaluationQuery = input.evaluationQuery?.trim() || input.title;
-    const queryEmbedding = await this.#embeddingProvider.embed(evaluationQuery);
-    const results = await this.#dataStore.searchChunks({
-      embedding: queryEmbedding.embedding,
-      embeddingModel: queryEmbedding.model,
-      datasetId: ingestResult.dataset.id,
-      limit: 5,
-    });
-    const quality = await this.#dataStore.getQualitySummary();
-    const datasetQuality = quality.datasets.find(
-      (dataset) => dataset.id === ingestResult.dataset.id,
-    );
-
-    return {
-      dataset: ingestResult.dataset,
-      document: ingestResult.document,
-      chunks: ingestResult.chunks,
-      embeddedChunks,
-      embeddingProvider: this.#embeddingProvider.provider,
-      embeddingModel: embeddingModel || queryEmbedding.model,
-      evaluationQuery,
-      results,
-      datasetQuality,
-      quality,
-      summary: `Stored ${ingestResult.chunks.length} selected chunks and embedded ${embeddedChunks} for ${input.datasetName}.`,
-    };
   }
 
   async #findDevelopmentProjectFiles(): Promise<{ path: string; type: string }[]> {
@@ -855,11 +834,15 @@ function validateToolInput(request: ReturnType<typeof normalizeToolExecuteReques
     return;
   }
 
-  if (request.name === "workspace.ingest_selected_content") {
+  if (request.name === "workspace.content_ingestion_studio") {
     readString(request.input.datasetName);
     readString(request.input.title);
-    readString(request.input.text);
-    readDataSourceType(request.input.sourceType, "manual");
+    const sourceKind = readContentIngestionSourceKind(request.input.sourceKind);
+    if (sourceKind === "pasted_text") {
+      readString(request.input.text);
+    } else {
+      readString(request.input.path);
+    }
   }
 }
 
@@ -875,20 +858,13 @@ function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function readDataSourceType(
-  value: unknown,
-  fallback: DataDocument["sourceType"],
-): DataDocument["sourceType"] {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
+function readContentIngestionSourceKind(value: unknown): ContentIngestionSourceKind {
+  const sourceKind = readString(value);
+  if (!["pasted_text", "workspace_file", "workspace_folder"].includes(sourceKind)) {
+    throw new Error("Source kind must be pasted_text, workspace_file, or workspace_folder");
   }
 
-  const sourceType = readString(value);
-  if (!["manual", "file", "url", "api"].includes(sourceType)) {
-    throw new Error("Source type must be manual, file, url, or api");
-  }
-
-  return sourceType as DataDocument["sourceType"];
+  return sourceKind as ContentIngestionSourceKind;
 }
 
 function readProjectCheckTarget(value: unknown): string {

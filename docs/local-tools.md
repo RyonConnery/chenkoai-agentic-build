@@ -40,7 +40,7 @@ workspace.git_diff
 workspace.detect_development_tools
 workspace.open_development_target
 workspace.run_dev_task
-workspace.ingest_selected_content
+workspace.content_ingestion_studio
 ```
 
 Example:
@@ -101,22 +101,28 @@ rust_native_check
 
 Each task maps to a fixed command and timeout. The tool returns exit code, stdout, stderr, timeout state, and a summary.
 
-`workspace.ingest_selected_content` requires approval. It stores user-approved selected content as ChenkoAI memory, chunks it, embeds the stored chunks immediately, runs a retrieval check, and returns dataset quality plus top matching chunks.
+`workspace.content_ingestion_studio` requires approval. It stores chosen content as ChenkoAI memory, chunks it, embeds the stored chunks immediately, runs a retrieval check, and returns dataset quality, retrieval score, source list, skipped sources, and ready-for-agent-memory status.
 
 Example:
 
 ```json
 {
-  "name": "workspace.ingest_selected_content",
+  "name": "workspace.content_ingestion_studio",
   "input": {
-    "datasetName": "chenkoai-selected-memory",
+    "datasetName": "chenkoai-knowledge-base",
     "title": "Production Data Foundation Notes",
-    "sourceType": "manual",
+    "sourceKind": "pasted_text",
     "text": "Important content ChenkoAI should remember...",
     "evaluationQuery": "What production data foundation guidance was added?"
   }
 }
 ```
+
+Supported `sourceKind` values:
+
+- `pasted_text`: ingest text supplied in the tool input.
+- `workspace_file`: ingest one workspace-relative text/code file from `path`.
+- `workspace_folder`: ingest text/code files from one workspace-relative folder, capped by `maxFiles`.
 
 ## Permission Flow
 

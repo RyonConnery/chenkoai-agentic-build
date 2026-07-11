@@ -176,17 +176,17 @@ textarea {
   resize: vertical;
 }
 
-.selected-knowledge-grid {
+.ingestion-studio-grid {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
 }
 
-.selected-knowledge-text {
+.ingestion-studio-text {
   min-height: 180px;
 }
 
-.selected-knowledge-result {
+.ingestion-studio-result {
   border-top: 1px solid #edf1f7;
   display: grid;
   gap: 10px;
@@ -194,7 +194,7 @@ textarea {
   padding-top: 14px;
 }
 
-.selected-tool-test {
+.ingestion-studio-actions {
   background: #f7f9fc;
   border: 1px solid #dce3ee;
   border-radius: 8px;
@@ -204,8 +204,13 @@ textarea {
   padding: 12px;
 }
 
-.selected-tool-test h3,
-.selected-tool-test p {
+.ingestion-source-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ingestion-studio-actions h3,
+.ingestion-studio-actions p {
   margin-bottom: 6px;
 }
 
@@ -715,7 +720,7 @@ pre {
 
   .dashboard,
   .metric-grid,
-  .selected-knowledge-grid {
+  .ingestion-studio-grid {
     grid-template-columns: 1fr;
   }
 

@@ -61,7 +61,7 @@ export const localToolNameSchema = z.enum([
   "workspace.detect_development_tools",
   "workspace.open_development_target",
   "workspace.run_dev_task",
-  "workspace.ingest_selected_content",
+  "workspace.content_ingestion_studio",
 ]);
 
 export const toolExecuteRequestSchema = z.object({

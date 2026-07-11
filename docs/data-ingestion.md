@@ -15,7 +15,7 @@ Use `memory` for quick development. Use `postgres` for durable data.
 
 ```text
 POST /data/ingest/text
-POST /data/ingest/selected
+POST /data/ingestion/studio
 POST /data/embeddings/rebuild
 POST /data/search
 GET  /data/datasets
@@ -48,22 +48,30 @@ The ingestion service:
 - Splits text into ordered chunks.
 - Stores token estimates for later embedding and cost planning.
 
-## Selected Knowledge Ingestion
+## Content Ingestion Studio
 
-Use selected knowledge ingestion when you want ChenkoAI to remember specific content instead of scanning the full workspace:
+Use Content Ingestion Studio when you want ChenkoAI to remember specific chosen content instead of scanning the full workspace:
 
 ```json
 {
-  "datasetName": "chenkoai-selected-memory",
+  "datasetName": "chenkoai-knowledge-base",
   "title": "Production Data Foundation Notes",
-  "sourceType": "manual",
+  "sourceKind": "pasted_text",
   "sourceUri": "planning-session",
   "text": "Important content ChenkoAI should remember...",
   "evaluationQuery": "What production data foundation guidance was added?"
 }
 ```
 
-`POST /data/ingest/selected` stores the document, chunks the content, embeds the stored chunks immediately, runs a retrieval check using `evaluationQuery`, and returns dataset quality counts plus the top matching chunks. The desktop control center exposes this as `Add Selected Knowledge`.
+`POST /data/ingestion/studio` stores the selected source, chunks it, embeds the stored chunks immediately, runs a retrieval check using `evaluationQuery`, and returns dataset quality counts plus top matching chunks. The desktop control center exposes this as `Content Ingestion Studio`.
+
+Supported source kinds:
+
+- `pasted_text`: stores the supplied text as a manual memory document.
+- `workspace_file`: reads and stores one workspace-relative text/code file from `path`.
+- `workspace_folder`: reads and stores text/code files from one workspace-relative folder, capped by `maxFiles`.
+
+The response includes document count, chunk count, embedded chunk count, duplicate count, skipped sources, retrieval score, and ready-for-agent-memory status.
 
 ## Embeddings
 

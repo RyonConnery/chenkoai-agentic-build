@@ -128,25 +128,29 @@ type EmbeddingRebuildResult = {
   embeddedChunks: number;
 };
 
-type SelectedContentIngestResult = {
+type ContentIngestionStudioResult = {
   dataset: DataDataset;
-  document: {
+  documents: {
     id: string;
     title: string;
     sourceType: string;
     sourceUri?: string;
-  };
-  chunks: {
-    id: string;
-    content: string;
+    chunkCount: number;
   }[];
+  documentCount: number;
+  chunkCount: number;
   embeddedChunks: number;
+  skippedSources: { source: string; reason: string }[];
   embeddingProvider: string;
   embeddingModel: string;
   evaluationQuery: string;
+  retrievalScore: number;
+  readyForAgentMemory: boolean;
+  readiness: "ready" | "needs_attention";
   results: DataSearchResult[];
   datasetQuality?: DataQualitySummary["datasets"][number];
   quality: DataQualitySummary;
+  summary: string;
 };
 
 type MemoryEvaluation = {
@@ -269,20 +273,20 @@ function App() {
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [memorySearchResults, setMemorySearchResults] = useState<DataSearchResult[]>([]);
   const [embeddingRebuild, setEmbeddingRebuild] = useState<EmbeddingRebuildResult | undefined>();
-  const [selectedContentDatasetName, setSelectedContentDatasetName] = useState("chenkoai-selected-memory");
-  const [selectedContentTitle, setSelectedContentTitle] = useState("Selected ChenkoAI Knowledge");
-  const [selectedContentSourceType, setSelectedContentSourceType] = useState("manual");
-  const [selectedContentSourceUri, setSelectedContentSourceUri] = useState("");
-  const [selectedContentEvaluationQuery, setSelectedContentEvaluationQuery] = useState(
+  const [ingestionDatasetName, setIngestionDatasetName] = useState("chenkoai-knowledge-base");
+  const [ingestionTitle, setIngestionTitle] = useState("New ChenkoAI Knowledge Source");
+  const [ingestionSourceKind, setIngestionSourceKind] = useState("pasted_text");
+  const [ingestionSourcePath, setIngestionSourcePath] = useState("docs");
+  const [ingestionSourceUri, setIngestionSourceUri] = useState("");
+  const [ingestionEvaluationQuery, setIngestionEvaluationQuery] = useState(
     "What important knowledge was added?",
   );
-  const [selectedContentText, setSelectedContentText] = useState("");
-  const [selectedContentIngest, setSelectedContentIngest] =
-    useState<SelectedContentIngestResult | undefined>();
-  const [selectedContentToolPermission, setSelectedContentToolPermission] =
+  const [ingestionText, setIngestionText] = useState("");
+  const [ingestionMaxFiles, setIngestionMaxFiles] = useState(25);
+  const [ingestionResult, setIngestionResult] =
+    useState<ContentIngestionStudioResult | undefined>();
+  const [ingestionPermission, setIngestionPermission] =
     useState<PermissionRequest | undefined>();
-  const [selectedContentToolResult, setSelectedContentToolResult] =
-    useState<SelectedContentIngestResult | undefined>();
   const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
@@ -401,20 +405,31 @@ function App() {
     });
   }
 
-  function createSelectedContentToolInput(): Record<string, unknown> {
+  function createContentIngestionInput(): Record<string, unknown> {
     return {
-      datasetName: selectedContentDatasetName,
-      title: selectedContentTitle,
-      sourceType: selectedContentSourceType,
-      sourceUri: selectedContentSourceUri.trim() || undefined,
-      text: selectedContentText,
-      evaluationQuery: selectedContentEvaluationQuery,
+      datasetName: ingestionDatasetName,
+      title: ingestionTitle,
+      sourceKind: ingestionSourceKind,
+      text: ingestionSourceKind === "pasted_text" ? ingestionText : undefined,
+      path: ingestionSourceKind === "pasted_text" ? undefined : ingestionSourcePath,
+      sourceUri: ingestionSourceUri.trim() || undefined,
+      evaluationQuery: ingestionEvaluationQuery,
+      maxFiles: ingestionMaxFiles,
     };
   }
 
-  function applySelectedContentResult(result: SelectedContentIngestResult): void {
-    setSelectedContentIngest(result);
-    setSelectedContentToolResult(result);
+  function contentIngestionReady(): boolean {
+    if (!ingestionDatasetName.trim() || !ingestionTitle.trim()) {
+      return false;
+    }
+
+    return ingestionSourceKind === "pasted_text"
+      ? Boolean(ingestionText.trim())
+      : Boolean(ingestionSourcePath.trim());
+  }
+
+  function applyContentIngestionResult(result: ContentIngestionStudioResult): void {
+    setIngestionResult(result);
     setSelectedDatasetId(result.dataset.id);
     setMemorySearchQuery(result.evaluationQuery);
     setMemorySearchResults(result.results);
@@ -507,201 +522,184 @@ function App() {
 
             <div className="section-heading compact-heading">
               <div>
-                <h2>Add Selected Knowledge</h2>
+                <h2>Content Ingestion Studio</h2>
                 <p className="muted">
-                  Store specific content you choose, embed its chunks, and evaluate retrieval immediately.
+                  Choose exact content, store it in Postgres memory, embed it, and score whether it is ready for agent use.
                 </p>
               </div>
             </div>
             <label>
               Dataset name
               <input
-                value={selectedContentDatasetName}
-                onChange={(event) => setSelectedContentDatasetName(event.target.value)}
+                value={ingestionDatasetName}
+                onChange={(event) => setIngestionDatasetName(event.target.value)}
               />
             </label>
             <label>
               Title
               <input
-                value={selectedContentTitle}
-                onChange={(event) => setSelectedContentTitle(event.target.value)}
+                value={ingestionTitle}
+                onChange={(event) => setIngestionTitle(event.target.value)}
               />
             </label>
-            <div className="selected-knowledge-grid">
+            <div className="ingestion-studio-grid">
               <label>
-                Source type
+                Source
                 <select
-                  value={selectedContentSourceType}
-                  onChange={(event) => setSelectedContentSourceType(event.target.value)}
+                  value={ingestionSourceKind}
+                  onChange={(event) => setIngestionSourceKind(event.target.value)}
                 >
-                  <option value="manual">Manual note</option>
-                  <option value="file">File excerpt</option>
-                  <option value="url">URL / web source</option>
-                  <option value="api">API / tool output</option>
+                  <option value="pasted_text">Pasted text</option>
+                  <option value="workspace_file">Workspace file</option>
+                  <option value="workspace_folder">Workspace folder</option>
                 </select>
               </label>
               <label>
-                Source URI
+                Evaluation query
                 <input
-                  placeholder="Optional source, file, URL, or reference"
-                  value={selectedContentSourceUri}
-                  onChange={(event) => setSelectedContentSourceUri(event.target.value)}
+                  value={ingestionEvaluationQuery}
+                  onChange={(event) => setIngestionEvaluationQuery(event.target.value)}
                 />
               </label>
             </div>
-            <label>
-              Evaluation query
-              <input
-                value={selectedContentEvaluationQuery}
-                onChange={(event) => setSelectedContentEvaluationQuery(event.target.value)}
-              />
-            </label>
-            <label>
-              Content to store
-              <textarea
-                className="selected-knowledge-text"
-                placeholder="Paste notes, requirements, research, generated planning output, specs, prompts, or other content you want ChenkoAI to remember."
-                value={selectedContentText}
-                onChange={(event) => setSelectedContentText(event.target.value)}
-              />
-            </label>
-            <div className="selected-tool-test">
-              <div>
-                <h3>Agent Tool Test</h3>
-                <p className="muted">
-                  Use the actual agent tool path with an approval request:
-                  workspace.ingest_selected_content.
-                </p>
+            {ingestionSourceKind === "pasted_text" ? (
+              <>
+                <label>
+                  Source reference
+                  <input
+                    placeholder="Optional reference, URL, note name, or tool source"
+                    value={ingestionSourceUri}
+                    onChange={(event) => setIngestionSourceUri(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Content to ingest
+                  <textarea
+                    className="ingestion-studio-text"
+                    placeholder="Paste requirements, research, specs, tool output, notes, prompts, or other source content ChenkoAI should remember."
+                    value={ingestionText}
+                    onChange={(event) => setIngestionText(event.target.value)}
+                  />
+                </label>
+              </>
+            ) : (
+              <div className="ingestion-studio-grid">
+                <label>
+                  Workspace-relative path
+                  <input
+                    placeholder={ingestionSourceKind === "workspace_file" ? "docs/data-ingestion.md" : "docs"}
+                    value={ingestionSourcePath}
+                    onChange={(event) => setIngestionSourcePath(event.target.value)}
+                  />
+                </label>
+                {ingestionSourceKind === "workspace_folder" ? (
+                  <label>
+                    Max files
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={ingestionMaxFiles}
+                      onChange={(event) => setIngestionMaxFiles(Number(event.target.value))}
+                    />
+                  </label>
+                ) : null}
               </div>
-              <div className="button-row">
-                <button
-                  disabled={
-                    busy ||
-                    !selectedContentDatasetName.trim() ||
-                    !selectedContentTitle.trim() ||
-                    !selectedContentText.trim()
-                  }
-                  onClick={() =>
-                    void runAction(async () => {
-                      const result = await apiPost<ToolExecutionResult>("/tools/execute", {
-                        name: "workspace.ingest_selected_content",
-                        input: createSelectedContentToolInput(),
-                      });
-                      if (result.permissionRequest) {
-                        setSelectedContentToolPermission(result.permissionRequest);
-                        setMessage("Agent tool approval requested. Approve it below to execute.");
-                      } else if (result.ok && result.output) {
-                        applySelectedContentResult(result.output as SelectedContentIngestResult);
-                        setMessage("Agent tool executed.");
-                      } else {
-                        setMessage(result.error ?? "Agent tool request failed.");
-                      }
-                      return selectedRunId || undefined;
-                    })
-                  }
-                >
-                  Test Agent Ingestion Tool
-                </button>
-                <button
-                  className="secondary"
-                  disabled={
-                    busy ||
-                    !selectedContentDatasetName.trim() ||
-                    !selectedContentTitle.trim() ||
-                    !selectedContentText.trim()
-                  }
-                  onClick={() =>
-                    void runAction(async () => {
-                      const result = await apiPost<SelectedContentIngestResult>(
-                        "/data/ingest/selected",
-                        {
-                          datasetName: selectedContentDatasetName,
-                          title: selectedContentTitle,
-                          sourceType: selectedContentSourceType,
-                          sourceUri: selectedContentSourceUri.trim() || undefined,
-                          text: selectedContentText,
-                          evaluationQuery: selectedContentEvaluationQuery,
-                          metadata: {
-                            source: "desktop-selected-content",
-                          },
-                        },
-                      );
-                      applySelectedContentResult(result);
-                      setMessage(
-                        `Stored ${result.chunks.length} selected chunks and embedded ${result.embeddedChunks}.`,
-                      );
-                      return selectedRunId || undefined;
-                    })
-                  }
-                >
-                  Store Directly
-                </button>
-              </div>
-              {selectedContentToolPermission &&
-              selectedContentToolPermission.status === "pending" ? (
+            )}
+            <div className="ingestion-studio-actions">
+              <button
+                disabled={busy || !contentIngestionReady()}
+                onClick={() =>
+                  void runAction(async () => {
+                    const result = await apiPost<ToolExecutionResult>("/tools/execute", {
+                      name: "workspace.content_ingestion_studio",
+                      input: createContentIngestionInput(),
+                    });
+                    if (result.permissionRequest) {
+                      setIngestionPermission(result.permissionRequest);
+                      setMessage("Content ingestion approval requested. Approve it below to run.");
+                    } else if (result.ok && result.output) {
+                      applyContentIngestionResult(result.output as ContentIngestionStudioResult);
+                      setMessage("Content Ingestion Studio completed.");
+                    } else {
+                      setMessage(result.error ?? "Content ingestion failed.");
+                    }
+                    return selectedRunId || undefined;
+                  })
+                }
+              >
+                Run Content Ingestion Studio
+              </button>
+              {ingestionPermission && ingestionPermission.status === "pending" ? (
                 <PermissionCard
                   disabled={busy}
-                  permission={selectedContentToolPermission}
+                  permission={ingestionPermission}
                   onDecision={(approved) =>
                     runAction(async () => {
-                      await apiPost(
-                        `/tools/permissions/${selectedContentToolPermission.id}/decision`,
-                        {
-                          approved,
-                          decidedBy: "desktop-control-center",
-                        },
-                      );
+                      await apiPost(`/tools/permissions/${ingestionPermission.id}/decision`, {
+                        approved,
+                        decidedBy: "desktop-control-center",
+                      });
                       if (approved) {
                         const executed = await apiPost<ToolExecutionResult>("/tools/execute", {
-                          name: "workspace.ingest_selected_content",
-                          approvalId: selectedContentToolPermission.id,
-                          input: selectedContentToolPermission.input,
+                          name: "workspace.content_ingestion_studio",
+                          approvalId: ingestionPermission.id,
+                          input: ingestionPermission.input,
                         });
                         if (executed.ok && executed.output) {
-                          applySelectedContentResult(
-                            executed.output as SelectedContentIngestResult,
+                          applyContentIngestionResult(
+                            executed.output as ContentIngestionStudioResult,
                           );
-                          setMessage("Agent tool approved and executed.");
+                          setMessage("Content ingestion approved and completed.");
                         } else {
-                          setMessage(executed.error ?? "Approved agent tool execution failed.");
+                          setMessage(executed.error ?? "Approved content ingestion failed.");
                         }
                       } else {
-                        setMessage("Agent tool permission denied.");
+                        setMessage("Content ingestion denied.");
                       }
-                      setSelectedContentToolPermission(undefined);
+                      setIngestionPermission(undefined);
                       return selectedRunId || undefined;
                     })
                   }
                 />
               ) : null}
             </div>
-            {selectedContentIngest ? (
-              <section className="selected-knowledge-result">
+            {ingestionResult ? (
+              <section className="ingestion-studio-result">
                 <div className="memory-evaluation-summary">
-                  <Metric label="Stored Chunks" value={String(selectedContentIngest.chunks.length)} />
-                  <Metric label="Embedded" value={String(selectedContentIngest.embeddedChunks)} />
+                  <Metric label="Documents" value={String(ingestionResult.documentCount)} />
+                  <Metric label="Chunks" value={String(ingestionResult.chunkCount)} />
+                  <Metric label="Embedded" value={String(ingestionResult.embeddedChunks)} />
+                  <Metric label="Score" value={`${ingestionResult.retrievalScore}%`} />
                   <Metric
-                    label="Dataset Docs"
-                    value={String(selectedContentIngest.datasetQuality?.documentCount ?? 0)}
+                    label="Duplicates"
+                    value={String(ingestionResult.datasetQuality?.duplicateDocumentCount ?? 0)}
                   />
                   <Metric
-                    label="Dataset Chunks"
-                    value={String(selectedContentIngest.datasetQuality?.chunkCount ?? 0)}
+                    label="Ready"
+                    value={ingestionResult.readyForAgentMemory ? "Yes" : "Review"}
                   />
                 </div>
-                <p className="muted">
-                  Stored in {selectedContentIngest.dataset.name} using{" "}
-                  {selectedContentIngest.embeddingModel}. Evaluation query:{" "}
-                  {selectedContentIngest.evaluationQuery}
+                <p className={ingestionResult.readyForAgentMemory ? "notice" : "warning"}>
+                  {ingestionResult.summary} Status: {ingestionResult.readiness.replace("_", " ")}.
                 </p>
-                {selectedContentToolResult ? (
-                  <p className="notice">
-                    Last successful agent tool test used workspace.ingest_selected_content.
+                <div className="ingestion-source-list">
+                  {ingestionResult.documents.slice(0, 6).map((document) => (
+                    <div className="quality-row" key={document.id}>
+                      <strong>{document.sourceUri || document.title}</strong>
+                      <span>{document.chunkCount} chunks | {document.sourceType}</span>
+                    </div>
+                  ))}
+                </div>
+                {ingestionResult.skippedSources.length > 0 ? (
+                  <p className="warning">
+                    Skipped {ingestionResult.skippedSources.length} source(s). First skipped:{" "}
+                    {ingestionResult.skippedSources[0]?.source} - {ingestionResult.skippedSources[0]?.reason}
                   </p>
                 ) : null}
-                {selectedContentIngest.results.length > 0 ? (
+                {ingestionResult.results.length > 0 ? (
                   <div className="memory-source-list">
-                    {selectedContentIngest.results.map((result, index) => (
+                    {ingestionResult.results.map((result, index) => (
                       <article className="memory-source" key={result.chunk.id}>
                         <div className="memory-source-header">
                           <strong>
@@ -718,7 +716,7 @@ function App() {
                   </div>
                 ) : (
                   <p className="warning">
-                    Content was stored, but no embedded retrieval matches were returned yet.
+                    Content was stored, but no retrieval matches were returned for the evaluation query.
                   </p>
                 )}
               </section>
@@ -1522,19 +1520,24 @@ function describePermission(permission: PermissionRequest): {
     };
   }
 
-  if (permission.toolName === "workspace.ingest_selected_content") {
+  if (permission.toolName === "workspace.content_ingestion_studio") {
     const datasetName =
       typeof permission.input.datasetName === "string"
         ? permission.input.datasetName
         : "unknown dataset";
     const title = typeof permission.input.title === "string" ? permission.input.title : "Untitled";
     const text = typeof permission.input.text === "string" ? permission.input.text : "";
+    const sourceKind =
+      typeof permission.input.sourceKind === "string" ? permission.input.sourceKind : "unknown";
+    const sourcePath = typeof permission.input.path === "string" ? permission.input.path : "";
     return {
-      title: `Store selected memory: ${title}`,
+      title: `Run Content Ingestion Studio: ${title}`,
       description:
-        "ChenkoAI wants approval before adding selected content to durable memory.",
+        "ChenkoAI wants approval before adding chosen content to durable memory.",
       details: [
         `Dataset: ${datasetName}`,
+        `Source: ${sourceKind}`,
+        sourcePath ? `Path: ${sourcePath}` : "",
         text ? `Content preview: ${text.slice(0, 180)}${text.length > 180 ? "..." : ""}` : "",
       ].filter(Boolean),
     };
