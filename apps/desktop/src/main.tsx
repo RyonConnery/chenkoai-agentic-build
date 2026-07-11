@@ -21,6 +21,14 @@ type PermissionRequest = {
   input: Record<string, unknown>;
 };
 
+type ToolExecutionResult = {
+  name: string;
+  ok: boolean;
+  output?: unknown;
+  error?: string;
+  permissionRequest?: PermissionRequest;
+};
+
 type RunReport = {
   runId: string;
   status: string;
@@ -271,6 +279,10 @@ function App() {
   const [selectedContentText, setSelectedContentText] = useState("");
   const [selectedContentIngest, setSelectedContentIngest] =
     useState<SelectedContentIngestResult | undefined>();
+  const [selectedContentToolPermission, setSelectedContentToolPermission] =
+    useState<PermissionRequest | undefined>();
+  const [selectedContentToolResult, setSelectedContentToolResult] =
+    useState<SelectedContentIngestResult | undefined>();
   const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
@@ -387,6 +399,26 @@ function App() {
       );
       return selectedRunId || undefined;
     });
+  }
+
+  function createSelectedContentToolInput(): Record<string, unknown> {
+    return {
+      datasetName: selectedContentDatasetName,
+      title: selectedContentTitle,
+      sourceType: selectedContentSourceType,
+      sourceUri: selectedContentSourceUri.trim() || undefined,
+      text: selectedContentText,
+      evaluationQuery: selectedContentEvaluationQuery,
+    };
+  }
+
+  function applySelectedContentResult(result: SelectedContentIngestResult): void {
+    setSelectedContentIngest(result);
+    setSelectedContentToolResult(result);
+    setSelectedDatasetId(result.dataset.id);
+    setMemorySearchQuery(result.evaluationQuery);
+    setMemorySearchResults(result.results);
+    setDataQuality(result.quality);
   }
 
   return (
@@ -533,43 +565,116 @@ function App() {
                 onChange={(event) => setSelectedContentText(event.target.value)}
               />
             </label>
-            <button
-              disabled={
-                busy ||
-                !selectedContentDatasetName.trim() ||
-                !selectedContentTitle.trim() ||
-                !selectedContentText.trim()
-              }
-              onClick={() =>
-                void runAction(async () => {
-                  const result = await apiPost<SelectedContentIngestResult>(
-                    "/data/ingest/selected",
-                    {
-                      datasetName: selectedContentDatasetName,
-                      title: selectedContentTitle,
-                      sourceType: selectedContentSourceType,
-                      sourceUri: selectedContentSourceUri.trim() || undefined,
-                      text: selectedContentText,
-                      evaluationQuery: selectedContentEvaluationQuery,
-                      metadata: {
-                        source: "desktop-selected-content",
-                      },
-                    },
-                  );
-                  setSelectedContentIngest(result);
-                  setSelectedDatasetId(result.dataset.id);
-                  setMemorySearchQuery(result.evaluationQuery);
-                  setMemorySearchResults(result.results);
-                  setDataQuality(result.quality);
-                  setMessage(
-                    `Stored ${result.chunks.length} selected chunks and embedded ${result.embeddedChunks}.`,
-                  );
-                  return selectedRunId || undefined;
-                })
-              }
-            >
-              Store, Chunk & Evaluate
-            </button>
+            <div className="selected-tool-test">
+              <div>
+                <h3>Agent Tool Test</h3>
+                <p className="muted">
+                  Use the actual agent tool path with an approval request:
+                  workspace.ingest_selected_content.
+                </p>
+              </div>
+              <div className="button-row">
+                <button
+                  disabled={
+                    busy ||
+                    !selectedContentDatasetName.trim() ||
+                    !selectedContentTitle.trim() ||
+                    !selectedContentText.trim()
+                  }
+                  onClick={() =>
+                    void runAction(async () => {
+                      const result = await apiPost<ToolExecutionResult>("/tools/execute", {
+                        name: "workspace.ingest_selected_content",
+                        input: createSelectedContentToolInput(),
+                      });
+                      if (result.permissionRequest) {
+                        setSelectedContentToolPermission(result.permissionRequest);
+                        setMessage("Agent tool approval requested. Approve it below to execute.");
+                      } else if (result.ok && result.output) {
+                        applySelectedContentResult(result.output as SelectedContentIngestResult);
+                        setMessage("Agent tool executed.");
+                      } else {
+                        setMessage(result.error ?? "Agent tool request failed.");
+                      }
+                      return selectedRunId || undefined;
+                    })
+                  }
+                >
+                  Test Agent Ingestion Tool
+                </button>
+                <button
+                  className="secondary"
+                  disabled={
+                    busy ||
+                    !selectedContentDatasetName.trim() ||
+                    !selectedContentTitle.trim() ||
+                    !selectedContentText.trim()
+                  }
+                  onClick={() =>
+                    void runAction(async () => {
+                      const result = await apiPost<SelectedContentIngestResult>(
+                        "/data/ingest/selected",
+                        {
+                          datasetName: selectedContentDatasetName,
+                          title: selectedContentTitle,
+                          sourceType: selectedContentSourceType,
+                          sourceUri: selectedContentSourceUri.trim() || undefined,
+                          text: selectedContentText,
+                          evaluationQuery: selectedContentEvaluationQuery,
+                          metadata: {
+                            source: "desktop-selected-content",
+                          },
+                        },
+                      );
+                      applySelectedContentResult(result);
+                      setMessage(
+                        `Stored ${result.chunks.length} selected chunks and embedded ${result.embeddedChunks}.`,
+                      );
+                      return selectedRunId || undefined;
+                    })
+                  }
+                >
+                  Store Directly
+                </button>
+              </div>
+              {selectedContentToolPermission &&
+              selectedContentToolPermission.status === "pending" ? (
+                <PermissionCard
+                  disabled={busy}
+                  permission={selectedContentToolPermission}
+                  onDecision={(approved) =>
+                    runAction(async () => {
+                      await apiPost(
+                        `/tools/permissions/${selectedContentToolPermission.id}/decision`,
+                        {
+                          approved,
+                          decidedBy: "desktop-control-center",
+                        },
+                      );
+                      if (approved) {
+                        const executed = await apiPost<ToolExecutionResult>("/tools/execute", {
+                          name: "workspace.ingest_selected_content",
+                          approvalId: selectedContentToolPermission.id,
+                          input: selectedContentToolPermission.input,
+                        });
+                        if (executed.ok && executed.output) {
+                          applySelectedContentResult(
+                            executed.output as SelectedContentIngestResult,
+                          );
+                          setMessage("Agent tool approved and executed.");
+                        } else {
+                          setMessage(executed.error ?? "Approved agent tool execution failed.");
+                        }
+                      } else {
+                        setMessage("Agent tool permission denied.");
+                      }
+                      setSelectedContentToolPermission(undefined);
+                      return selectedRunId || undefined;
+                    })
+                  }
+                />
+              ) : null}
+            </div>
             {selectedContentIngest ? (
               <section className="selected-knowledge-result">
                 <div className="memory-evaluation-summary">
@@ -589,6 +694,11 @@ function App() {
                   {selectedContentIngest.embeddingModel}. Evaluation query:{" "}
                   {selectedContentIngest.evaluationQuery}
                 </p>
+                {selectedContentToolResult ? (
+                  <p className="notice">
+                    Last successful agent tool test used workspace.ingest_selected_content.
+                  </p>
+                ) : null}
                 {selectedContentIngest.results.length > 0 ? (
                   <div className="memory-source-list">
                     {selectedContentIngest.results.map((result, index) => (

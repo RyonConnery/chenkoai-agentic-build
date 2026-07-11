@@ -194,6 +194,21 @@ textarea {
   padding-top: 14px;
 }
 
+.selected-tool-test {
+  background: #f7f9fc;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.selected-tool-test h3,
+.selected-tool-test p {
+  margin-bottom: 6px;
+}
+
 .checkbox-row {
   align-items: center;
   display: flex;
