@@ -1412,6 +1412,24 @@ function describePermission(permission: PermissionRequest): {
     };
   }
 
+  if (permission.toolName === "workspace.ingest_selected_content") {
+    const datasetName =
+      typeof permission.input.datasetName === "string"
+        ? permission.input.datasetName
+        : "unknown dataset";
+    const title = typeof permission.input.title === "string" ? permission.input.title : "Untitled";
+    const text = typeof permission.input.text === "string" ? permission.input.text : "";
+    return {
+      title: `Store selected memory: ${title}`,
+      description:
+        "ChenkoAI wants approval before adding selected content to durable memory.",
+      details: [
+        `Dataset: ${datasetName}`,
+        text ? `Content preview: ${text.slice(0, 180)}${text.length > 180 ? "..." : ""}` : "",
+      ].filter(Boolean),
+    };
+  }
+
   return {
     title: permission.toolName,
     description: permission.reason,

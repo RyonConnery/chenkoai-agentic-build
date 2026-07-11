@@ -40,6 +40,7 @@ workspace.git_diff
 workspace.detect_development_tools
 workspace.open_development_target
 workspace.run_dev_task
+workspace.ingest_selected_content
 ```
 
 Example:
@@ -99,6 +100,23 @@ rust_native_check
 ```
 
 Each task maps to a fixed command and timeout. The tool returns exit code, stdout, stderr, timeout state, and a summary.
+
+`workspace.ingest_selected_content` requires approval. It stores user-approved selected content as ChenkoAI memory, chunks it, embeds the stored chunks immediately, runs a retrieval check, and returns dataset quality plus top matching chunks.
+
+Example:
+
+```json
+{
+  "name": "workspace.ingest_selected_content",
+  "input": {
+    "datasetName": "chenkoai-selected-memory",
+    "title": "Production Data Foundation Notes",
+    "sourceType": "manual",
+    "text": "Important content ChenkoAI should remember...",
+    "evaluationQuery": "What production data foundation guidance was added?"
+  }
+}
+```
 
 ## Permission Flow
 

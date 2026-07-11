@@ -57,7 +57,10 @@ const agentRunStore = createAgentRunStore();
 const dataStore = createDataStore();
 const embeddingProvider = createDynamicEmbeddingProviderAdapter();
 const toolPermissions = createToolPermissionStore();
-const localTools = new LocalToolRegistry(toolPermissions);
+const localTools = new LocalToolRegistry(toolPermissions, {
+  dataStore,
+  embeddingProvider,
+});
 const modelProvider = createDynamicModelProviderAdapter();
 const promptRegistry = await createPromptRegistry();
 const agentMemoryRetriever = new AgentMemoryRetriever(dataStore, embeddingProvider);

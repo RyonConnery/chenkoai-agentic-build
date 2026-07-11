@@ -4,9 +4,12 @@ import path from "node:path";
 import {
   normalizeToolExecuteRequest,
   type LocalToolDefinition,
+  type DataDocument,
   type ToolExecuteRequest,
   type ToolExecutionResult,
 } from "@chenkoai/agent-core";
+import type { DataStore } from "./dataStore.js";
+import type { EmbeddingProviderAdapter } from "./embeddingProvider.js";
 import type { ToolPermissionStore } from "./toolPermissions.js";
 
 const defaultWorkspaceRoot = process.cwd();
@@ -81,16 +84,28 @@ type DevelopmentTaskDefinition = {
   timeoutMs: number;
 };
 
+type LocalToolRegistryOptions = {
+  workspaceRoot?: string;
+  dataStore?: DataStore;
+  embeddingProvider?: EmbeddingProviderAdapter;
+};
+
 export class LocalToolRegistry {
   readonly #workspaceRoot: string;
   readonly #permissionStore: ToolPermissionStore;
+  readonly #dataStore?: DataStore;
+  readonly #embeddingProvider?: EmbeddingProviderAdapter;
 
   constructor(
     permissionStore: ToolPermissionStore,
-    workspaceRoot = process.env.CHENKOAI_WORKSPACE_ROOT ?? defaultWorkspaceRoot,
+    options: LocalToolRegistryOptions = {},
   ) {
-    this.#workspaceRoot = path.resolve(workspaceRoot);
+    this.#workspaceRoot = path.resolve(
+      options.workspaceRoot ?? process.env.CHENKOAI_WORKSPACE_ROOT ?? defaultWorkspaceRoot,
+    );
     this.#permissionStore = permissionStore;
+    this.#dataStore = options.dataStore;
+    this.#embeddingProvider = options.embeddingProvider;
   }
 
   list(): LocalToolDefinition[] {
@@ -240,6 +255,44 @@ export class LocalToolRegistry {
           },
         },
       },
+      {
+        name: "workspace.ingest_selected_content",
+        description:
+          "Store selected user-approved content as durable ChenkoAI memory, chunk it, embed it, and return retrieval evidence.",
+        destructive: false,
+        requiresApproval: true,
+        inputSchema: {
+          type: "object",
+          required: ["datasetName", "title", "text"],
+          properties: {
+            datasetName: {
+              type: "string",
+              description: "Dataset where the selected content should be stored.",
+            },
+            title: {
+              type: "string",
+              description: "Document title for the selected content.",
+            },
+            text: {
+              type: "string",
+              description: "Selected content to store as durable memory.",
+            },
+            sourceType: {
+              type: "string",
+              enum: ["manual", "file", "url", "api"],
+              description: "Source category. Defaults to manual.",
+            },
+            sourceUri: {
+              type: "string",
+              description: "Optional source reference, file, URL, or tool identifier.",
+            },
+            evaluationQuery: {
+              type: "string",
+              description: "Optional query used to verify retrieval after ingestion.",
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -333,6 +386,21 @@ export class LocalToolRegistry {
           name: request.name,
           ok: true,
           output: await this.#runDevelopmentTask(readDevelopmentTaskName(request.input.task)),
+        };
+      }
+
+      if (request.name === "workspace.ingest_selected_content") {
+        return {
+          name: request.name,
+          ok: true,
+          output: await this.#ingestSelectedContent({
+            datasetName: readString(request.input.datasetName),
+            title: readString(request.input.title),
+            text: readString(request.input.text),
+            sourceType: readDataSourceType(request.input.sourceType, "manual"),
+            sourceUri: readOptionalString(request.input.sourceUri),
+            evaluationQuery: readOptionalString(request.input.evaluationQuery),
+          }),
         };
       }
 
@@ -584,6 +652,68 @@ export class LocalToolRegistry {
     };
   }
 
+  async #ingestSelectedContent(input: {
+    datasetName: string;
+    title: string;
+    text: string;
+    sourceType: DataDocument["sourceType"];
+    sourceUri?: string;
+    evaluationQuery?: string;
+  }): Promise<unknown> {
+    if (!this.#dataStore || !this.#embeddingProvider) {
+      throw new Error("Selected content ingestion is not configured for this tool registry");
+    }
+
+    const ingestResult = await this.#dataStore.ingestText({
+      datasetName: input.datasetName,
+      title: input.title,
+      sourceType: input.sourceType,
+      sourceUri: input.sourceUri,
+      text: input.text,
+      metadata: {
+        ingestionMode: "selected-content-tool",
+        selectedAt: new Date().toISOString(),
+        source: "workspace.ingest_selected_content",
+      },
+    });
+    let embeddedChunks = 0;
+    let embeddingModel = "";
+
+    for (const chunk of ingestResult.chunks) {
+      const embedding = await this.#embeddingProvider.embed(chunk.content);
+      embeddingModel = embedding.model;
+      await this.#dataStore.saveChunkEmbedding(chunk.id, embedding.embedding, embedding.model);
+      embeddedChunks += 1;
+    }
+
+    const evaluationQuery = input.evaluationQuery?.trim() || input.title;
+    const queryEmbedding = await this.#embeddingProvider.embed(evaluationQuery);
+    const results = await this.#dataStore.searchChunks({
+      embedding: queryEmbedding.embedding,
+      embeddingModel: queryEmbedding.model,
+      datasetId: ingestResult.dataset.id,
+      limit: 5,
+    });
+    const quality = await this.#dataStore.getQualitySummary();
+    const datasetQuality = quality.datasets.find(
+      (dataset) => dataset.id === ingestResult.dataset.id,
+    );
+
+    return {
+      dataset: ingestResult.dataset,
+      document: ingestResult.document,
+      chunks: ingestResult.chunks,
+      embeddedChunks,
+      embeddingProvider: this.#embeddingProvider.provider,
+      embeddingModel: embeddingModel || queryEmbedding.model,
+      evaluationQuery,
+      results,
+      datasetQuality,
+      quality,
+      summary: `Stored ${ingestResult.chunks.length} selected chunks and embedded ${embeddedChunks} for ${input.datasetName}.`,
+    };
+  }
+
   async #findDevelopmentProjectFiles(): Promise<{ path: string; type: string }[]> {
     const matches: { path: string; type: string }[] = [];
     const walk = async (folder: string, depth: number): Promise<void> => {
@@ -722,6 +852,14 @@ function validateToolInput(request: ReturnType<typeof normalizeToolExecuteReques
 
   if (request.name === "workspace.run_dev_task") {
     readDevelopmentTaskName(request.input.task);
+    return;
+  }
+
+  if (request.name === "workspace.ingest_selected_content") {
+    readString(request.input.datasetName);
+    readString(request.input.title);
+    readString(request.input.text);
+    readDataSourceType(request.input.sourceType, "manual");
   }
 }
 
@@ -731,6 +869,26 @@ function readNumber(value: unknown, fallback: number): number {
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readDataSourceType(
+  value: unknown,
+  fallback: DataDocument["sourceType"],
+): DataDocument["sourceType"] {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const sourceType = readString(value);
+  if (!["manual", "file", "url", "api"].includes(sourceType)) {
+    throw new Error("Source type must be manual, file, url, or api");
+  }
+
+  return sourceType as DataDocument["sourceType"];
 }
 
 function readProjectCheckTarget(value: unknown): string {
