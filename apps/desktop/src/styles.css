@@ -84,6 +84,24 @@ button.secondary {
   justify-content: flex-end;
 }
 
+.app-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 auto 16px;
+  max-width: 1440px;
+}
+
+.menu-item {
+  background: #e7ebf2;
+  color: #263248;
+}
+
+.menu-item.active {
+  background: #1f5eff;
+  color: white;
+}
+
 .status-pill.online {
   background: #e8f7ee;
   border-color: #bde7cb;
@@ -99,9 +117,49 @@ button.secondary {
 .dashboard {
   display: grid;
   gap: 16px;
-  grid-template-columns: 320px minmax(0, 1fr) 280px;
+  grid-template-columns: 360px minmax(0, 1fr);
   margin: 0 auto;
   max-width: 1440px;
+}
+
+.dashboard .agent-workflow,
+.dashboard .memory-workflow,
+.dashboard .ingestion-workflow,
+.dashboard .tools-workflow,
+.dashboard .settings-workflow {
+  display: none;
+}
+
+.view-agent .agent-workflow,
+.view-memory .memory-workflow,
+.view-ingestion .ingestion-workflow,
+.view-tools .tools-workflow,
+.view-settings .settings-workflow {
+  display: block;
+}
+
+.view-agent .side-panel,
+.view-memory .side-panel,
+.view-ingestion .side-panel,
+.view-tools .workspace,
+.view-tools .main-panel,
+.view-settings .workspace,
+.view-settings .main-panel {
+  display: none;
+}
+
+.view-memory,
+.view-ingestion,
+.view-tools,
+.view-settings {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.view-memory .workspace,
+.view-ingestion .workspace,
+.view-tools .side-panel,
+.view-settings .side-panel {
+  grid-column: 1 / -1;
 }
 
 .workspace,
@@ -497,6 +555,13 @@ textarea {
   gap: 8px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 12px;
+}
+
+.workspace-status {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0;
 }
 
 .backup-panel {

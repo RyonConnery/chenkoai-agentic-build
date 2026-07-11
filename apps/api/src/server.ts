@@ -24,11 +24,14 @@ import { AgentToolExecutor } from "./agentToolExecutor.js";
 import {
   readModelSettings,
   readStorageSettings,
+  readWorkspaceSettings,
   loadLocalSettingsIntoEnv,
   saveModelSettings,
   saveStorageSettings,
+  saveWorkspaceSettings,
   type ModelSettingsMutation,
   type StorageSettingsMutation,
+  type WorkspaceSettingsMutation,
 } from "./appSettings.js";
 import { createDataStore } from "./dataPersistence.js";
 import {
@@ -55,6 +58,7 @@ import { createToolPermissionStore } from "./toolPermissionPersistence.js";
 
 const port = Number(process.env.CHENKOAI_API_PORT ?? 8787);
 await loadLocalSettingsIntoEnv();
+process.env.CHENKOAI_ACTIVE_WORKSPACE_ROOT = process.env.CHENKOAI_WORKSPACE_ROOT ?? process.cwd();
 await connectPostgresOrFallBackToMemory();
 const server = Fastify({ logger: true });
 const agentRunStore = createAgentRunStore();
@@ -137,6 +141,16 @@ server.post<{ Body: ModelSettingsMutation }>("/settings/model", async (request, 
 });
 
 server.get("/settings/storage", async () => readStorageSettings());
+
+server.get("/settings/workspace", async () => readWorkspaceSettings());
+
+server.post<{ Body: WorkspaceSettingsMutation }>("/settings/workspace", async (request, reply) => {
+  const settings = await saveWorkspaceSettings(request.body ?? {});
+  return reply.code(201).send({
+    ...settings,
+    restartRequired: settings.configuredWorkspaceRoot !== settings.activeWorkspaceRoot,
+  });
+});
 
 server.post("/settings/storage/reconnect", async () => {
   const storage = readStorageSettings();

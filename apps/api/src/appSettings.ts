@@ -33,6 +33,12 @@ export type StorageSettingsResponse = {
   storageDegradedReason?: string;
 };
 
+export type WorkspaceSettingsResponse = {
+  configPath: string;
+  configuredWorkspaceRoot: string;
+  activeWorkspaceRoot: string;
+};
+
 export type ModelSettingsMutation = {
   provider?: string;
   embeddingProvider?: string;
@@ -48,6 +54,10 @@ export type ModelSettingsMutation = {
 export type StorageSettingsMutation = {
   storageMode?: string;
   databaseUrl?: string;
+};
+
+export type WorkspaceSettingsMutation = {
+  workspaceRoot?: string;
 };
 
 export async function loadLocalSettingsIntoEnv(): Promise<void> {
@@ -118,6 +128,17 @@ export function readStorageSettings(): StorageSettingsResponse {
   };
 }
 
+export function readWorkspaceSettings(): WorkspaceSettingsResponse {
+  const config = readRuntimeSettings();
+  const fallback = process.cwd();
+
+  return {
+    configPath: settingsPath(),
+    configuredWorkspaceRoot: config.CHENKOAI_WORKSPACE_ROOT ?? fallback,
+    activeWorkspaceRoot: process.env.CHENKOAI_ACTIVE_WORKSPACE_ROOT ?? config.CHENKOAI_WORKSPACE_ROOT ?? fallback,
+  };
+}
+
 export async function saveModelSettings(input: ModelSettingsMutation): Promise<ModelSettingsResponse> {
   const existing = await readFileSettings();
   const next: Record<string, string> = {
@@ -170,8 +191,24 @@ export async function saveStorageSettings(
   return readStorageSettings();
 }
 
+export async function saveWorkspaceSettings(
+  input: WorkspaceSettingsMutation,
+): Promise<WorkspaceSettingsResponse> {
+  const existing = await readFileSettings();
+  const workspaceRoot = path.resolve(readString(input.workspaceRoot, process.cwd()));
+  const next: Record<string, string> = {
+    ...existing,
+    CHENKOAI_WORKSPACE_ROOT: workspaceRoot,
+  };
+
+  await fs.writeFile(settingsPath(), serializeEnv(next), "utf8");
+  Object.assign(process.env, next);
+  return readWorkspaceSettings();
+}
+
 function readRuntimeSettings(): Record<string, string | undefined> {
   return {
+    CHENKOAI_WORKSPACE_ROOT: process.env.CHENKOAI_WORKSPACE_ROOT,
     DATA_STORE: process.env.DATA_STORE,
     CONFIGURED_DATA_STORE: process.env.CHENKOAI_CONFIGURED_DATA_STORE,
     AGENT_RUN_STORE: process.env.AGENT_RUN_STORE,

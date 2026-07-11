@@ -225,6 +225,12 @@ type StorageSettings = {
   configPath: string;
 };
 
+type WorkspaceSettings = {
+  configuredWorkspaceRoot: string;
+  activeWorkspaceRoot: string;
+  configPath: string;
+};
+
 type StorageReconnectResult = {
   postgresConfigured: boolean;
   connected: boolean;
@@ -256,6 +262,7 @@ type StorageRestoreResult = {
 };
 
 type ApiState = "checking" | "online" | "offline";
+type AppView = "agent" | "memory" | "ingestion" | "tools" | "settings";
 
 function App() {
   const [apiState, setApiState] = useState<ApiState>("checking");
@@ -290,6 +297,8 @@ function App() {
   const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
+  const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings | undefined>();
+  const [workspaceRootInput, setWorkspaceRootInput] = useState("");
   const [storageBackups, setStorageBackups] = useState<StorageBackupSummary[]>([]);
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const modelSettingsDirty = useRef(false);
@@ -301,6 +310,7 @@ function App() {
   const [autoRunOnCreate, setAutoRunOnCreate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [activeView, setActiveView] = useState<AppView>("agent");
 
   const selectedRun = useMemo(
     () => runs.find((run) => run.id === selectedRunId),
@@ -314,6 +324,7 @@ function App() {
         modelPayload,
         settingsPayload,
         storagePayload,
+        workspacePayload,
         profilePayload,
         runPayload,
         permissionPayload,
@@ -325,6 +336,7 @@ function App() {
         apiGet<{ provider: string }>("/model/provider"),
         apiGet<ModelSettings>("/settings/model"),
         apiGet<StorageSettings>("/settings/storage"),
+        apiGet<WorkspaceSettings>("/settings/workspace"),
         apiGet<SystemProfile>("/system/profile"),
         apiGet<{ runs: RunListItem[] }>("/agent/runs"),
         apiGet<{ permissions: PermissionRequest[] }>("/tools/permissions"),
@@ -345,6 +357,8 @@ function App() {
         setModelSettings(settingsPayload);
       }
       setStorageSettings(storagePayload);
+      setWorkspaceSettings(workspacePayload);
+      setWorkspaceRootInput(workspacePayload.configuredWorkspaceRoot);
       setSystemProfile(profilePayload);
       setRuns(runPayload.runs);
       setPermissions(permissionPayload.permissions);
@@ -361,6 +375,8 @@ function App() {
       setModelProvider("unknown");
       setModelSettings(undefined);
       setStorageSettings(undefined);
+      setWorkspaceSettings(undefined);
+      setWorkspaceRootInput("");
       setStorageBackups([]);
       setDataQuality(undefined);
       setSystemProfile(undefined);
@@ -448,6 +464,38 @@ function App() {
           <div className={`status-pill ${apiState}`}>{apiState}</div>
         </div>
       </header>
+      <nav className="app-menu" aria-label="ChenkoAI workflows">
+        <button
+          className={activeView === "agent" ? "menu-item active" : "menu-item"}
+          onClick={() => setActiveView("agent")}
+        >
+          Agent Runs
+        </button>
+        <button
+          className={activeView === "memory" ? "menu-item active" : "menu-item"}
+          onClick={() => setActiveView("memory")}
+        >
+          Memory
+        </button>
+        <button
+          className={activeView === "ingestion" ? "menu-item active" : "menu-item"}
+          onClick={() => setActiveView("ingestion")}
+        >
+          Ingestion Studio
+        </button>
+        <button
+          className={activeView === "tools" ? "menu-item active" : "menu-item"}
+          onClick={() => setActiveView("tools")}
+        >
+          Tools & Approvals
+        </button>
+        <button
+          className={activeView === "settings" ? "menu-item active" : "menu-item"}
+          onClick={() => setActiveView("settings")}
+        >
+          Settings
+        </button>
+      </nav>
 
       {apiState === "offline" ? (
         <section className="empty-state">
@@ -456,8 +504,9 @@ function App() {
           <button onClick={() => void refresh()}>Retry</button>
         </section>
       ) : (
-        <section className="dashboard">
+        <section className={`dashboard view-${activeView}`}>
           <section className="workspace">
+            <div className="memory-workflow">
             <div className="section-heading">
               <h2>System Memory</h2>
               <button disabled={busy} onClick={() => void refresh()}>
@@ -520,6 +569,8 @@ function App() {
               </section>
             ) : null}
 
+            </div>
+            <div className="ingestion-workflow">
             <div className="section-heading compact-heading">
               <div>
                 <h2>Content Ingestion Studio</h2>
@@ -722,6 +773,8 @@ function App() {
               </section>
             ) : null}
 
+            </div>
+            <div className="memory-workflow">
             <div className="section-heading compact-heading">
               <h2>Memory Search & Repair</h2>
             </div>
@@ -921,6 +974,8 @@ function App() {
               </section>
             ) : null}
 
+            </div>
+            <div className="agent-workflow">
             <div className="section-heading compact-heading">
               <h2>Create Run</h2>
             </div>
@@ -992,9 +1047,10 @@ function App() {
                 ))
               )}
             </div>
+            </div>
           </section>
 
-          <section className="main-panel">
+          <section className="main-panel agent-workflow">
             <div className="section-heading">
               <div>
                 <h2>Run Report</h2>
@@ -1107,6 +1163,56 @@ function App() {
           </section>
 
           <aside className="side-panel">
+            <div className="settings-workflow">
+            <h2>Workspace Settings</h2>
+            {workspaceSettings ? (
+              <div className="settings-form">
+                <label>
+                  Project folder to scan and control
+                  <input
+                    value={workspaceRootInput}
+                    onChange={(event) => setWorkspaceRootInput(event.target.value)}
+                  />
+                </label>
+                <button
+                  disabled={busy || !workspaceRootInput.trim()}
+                  onClick={() =>
+                    void runAction(async () => {
+                      const saved = await apiPost<WorkspaceSettings & { restartRequired: boolean }>(
+                        "/settings/workspace",
+                        {
+                          workspaceRoot: workspaceRootInput,
+                        },
+                      );
+                      setWorkspaceSettings(saved);
+                      setWorkspaceRootInput(saved.configuredWorkspaceRoot);
+                      setMessage(
+                        saved.restartRequired
+                          ? "Workspace saved. Restart ChenkoAI so scans and tools use the new project folder."
+                          : "Workspace is already active.",
+                      );
+                      return selectedRunId || undefined;
+                    })
+                  }
+                >
+                  Save Workspace
+                </button>
+                <div className="workspace-status">
+                  <Metric label="Configured" value={shortPath(workspaceSettings.configuredWorkspaceRoot)} />
+                  <Metric label="Active" value={shortPath(workspaceSettings.activeWorkspaceRoot)} />
+                </div>
+                {workspaceSettings.configuredWorkspaceRoot !== workspaceSettings.activeWorkspaceRoot ? (
+                  <p className="warning">
+                    Restart ChenkoAI to activate the configured workspace for scanning, ingestion,
+                    and local tools.
+                  </p>
+                ) : (
+                  <p className="notice">Scans and tools are using this workspace now.</p>
+                )}
+              </div>
+            ) : (
+              <p className="muted">Workspace settings unavailable.</p>
+            )}
             <h2>Model Settings</h2>
             {modelSettings ? (
               <div className="settings-form">
@@ -1368,17 +1474,18 @@ function App() {
             ) : (
               <p className="muted">Storage settings unavailable.</p>
             )}
-            <h2>Knowledge Base</h2>
-            {documents.length === 0 ? (
-              <p className="muted">No scanned documents yet.</p>
-            ) : (
-              documents.slice(0, 6).map((document) => (
-                <div className="permission-row" key={document.id}>
-                  <strong>{document.title}</strong>
-                  <span>{document.chunkCount} chunks</span>
-                </div>
-              ))
-            )}
+            <h2>Data Foundation</h2>
+            <div className="storage-status">
+              <Metric label="Datasets" value={String(dataQuality?.totals.datasetCount ?? datasets.length)} />
+              <Metric label="Documents" value={String(dataQuality?.totals.documentCount ?? documents.length)} />
+              <Metric label="Chunks" value={String(dataQuality?.totals.chunkCount ?? 0)} />
+              <Metric label="Embedded" value={String(dataQuality?.totals.embeddedChunkCount ?? 0)} />
+            </div>
+            <p className="muted">
+              Use Memory and Ingestion Studio to inspect sources and add production knowledge.
+            </p>
+            </div>
+            <div className="tools-workflow">
             <h2>Permission Queue</h2>
             {permissions.length === 0 ? (
               <p className="muted">No permission history.</p>
@@ -1390,6 +1497,7 @@ function App() {
                 </div>
               ))
             )}
+            </div>
           </aside>
         </section>
       )}
@@ -1413,6 +1521,16 @@ function formatBackupDate(createdAt: string): string {
   }
 
   return date.toLocaleString();
+}
+
+function shortPath(value: string): string {
+  const normalized = value.replace(/\//g, "\\");
+  const parts = normalized.split("\\").filter(Boolean);
+  if (parts.length <= 3) {
+    return normalized;
+  }
+
+  return `...\\${parts.slice(-3).join("\\")}`;
 }
 
 function PermissionCard({
