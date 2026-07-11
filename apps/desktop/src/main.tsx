@@ -120,6 +120,27 @@ type EmbeddingRebuildResult = {
   embeddedChunks: number;
 };
 
+type SelectedContentIngestResult = {
+  dataset: DataDataset;
+  document: {
+    id: string;
+    title: string;
+    sourceType: string;
+    sourceUri?: string;
+  };
+  chunks: {
+    id: string;
+    content: string;
+  }[];
+  embeddedChunks: number;
+  embeddingProvider: string;
+  embeddingModel: string;
+  evaluationQuery: string;
+  results: DataSearchResult[];
+  datasetQuality?: DataQualitySummary["datasets"][number];
+  quality: DataQualitySummary;
+};
+
 type MemoryEvaluation = {
   provider: string;
   model: string;
@@ -240,6 +261,16 @@ function App() {
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [memorySearchResults, setMemorySearchResults] = useState<DataSearchResult[]>([]);
   const [embeddingRebuild, setEmbeddingRebuild] = useState<EmbeddingRebuildResult | undefined>();
+  const [selectedContentDatasetName, setSelectedContentDatasetName] = useState("chenkoai-selected-memory");
+  const [selectedContentTitle, setSelectedContentTitle] = useState("Selected ChenkoAI Knowledge");
+  const [selectedContentSourceType, setSelectedContentSourceType] = useState("manual");
+  const [selectedContentSourceUri, setSelectedContentSourceUri] = useState("");
+  const [selectedContentEvaluationQuery, setSelectedContentEvaluationQuery] = useState(
+    "What important knowledge was added?",
+  );
+  const [selectedContentText, setSelectedContentText] = useState("");
+  const [selectedContentIngest, setSelectedContentIngest] =
+    useState<SelectedContentIngestResult | undefined>();
   const [memoryEvaluation, setMemoryEvaluation] = useState<MemoryEvaluation | undefined>();
   const [modelSettings, setModelSettings] = useState<ModelSettings | undefined>();
   const [storageSettings, setStorageSettings] = useState<StorageSettings | undefined>();
@@ -439,6 +470,147 @@ function App() {
                     </span>
                   </div>
                 ))}
+              </section>
+            ) : null}
+
+            <div className="section-heading compact-heading">
+              <div>
+                <h2>Add Selected Knowledge</h2>
+                <p className="muted">
+                  Store specific content you choose, embed its chunks, and evaluate retrieval immediately.
+                </p>
+              </div>
+            </div>
+            <label>
+              Dataset name
+              <input
+                value={selectedContentDatasetName}
+                onChange={(event) => setSelectedContentDatasetName(event.target.value)}
+              />
+            </label>
+            <label>
+              Title
+              <input
+                value={selectedContentTitle}
+                onChange={(event) => setSelectedContentTitle(event.target.value)}
+              />
+            </label>
+            <div className="selected-knowledge-grid">
+              <label>
+                Source type
+                <select
+                  value={selectedContentSourceType}
+                  onChange={(event) => setSelectedContentSourceType(event.target.value)}
+                >
+                  <option value="manual">Manual note</option>
+                  <option value="file">File excerpt</option>
+                  <option value="url">URL / web source</option>
+                  <option value="api">API / tool output</option>
+                </select>
+              </label>
+              <label>
+                Source URI
+                <input
+                  placeholder="Optional source, file, URL, or reference"
+                  value={selectedContentSourceUri}
+                  onChange={(event) => setSelectedContentSourceUri(event.target.value)}
+                />
+              </label>
+            </div>
+            <label>
+              Evaluation query
+              <input
+                value={selectedContentEvaluationQuery}
+                onChange={(event) => setSelectedContentEvaluationQuery(event.target.value)}
+              />
+            </label>
+            <label>
+              Content to store
+              <textarea
+                className="selected-knowledge-text"
+                placeholder="Paste notes, requirements, research, generated planning output, specs, prompts, or other content you want ChenkoAI to remember."
+                value={selectedContentText}
+                onChange={(event) => setSelectedContentText(event.target.value)}
+              />
+            </label>
+            <button
+              disabled={
+                busy ||
+                !selectedContentDatasetName.trim() ||
+                !selectedContentTitle.trim() ||
+                !selectedContentText.trim()
+              }
+              onClick={() =>
+                void runAction(async () => {
+                  const result = await apiPost<SelectedContentIngestResult>(
+                    "/data/ingest/selected",
+                    {
+                      datasetName: selectedContentDatasetName,
+                      title: selectedContentTitle,
+                      sourceType: selectedContentSourceType,
+                      sourceUri: selectedContentSourceUri.trim() || undefined,
+                      text: selectedContentText,
+                      evaluationQuery: selectedContentEvaluationQuery,
+                      metadata: {
+                        source: "desktop-selected-content",
+                      },
+                    },
+                  );
+                  setSelectedContentIngest(result);
+                  setSelectedDatasetId(result.dataset.id);
+                  setMemorySearchQuery(result.evaluationQuery);
+                  setMemorySearchResults(result.results);
+                  setDataQuality(result.quality);
+                  setMessage(
+                    `Stored ${result.chunks.length} selected chunks and embedded ${result.embeddedChunks}.`,
+                  );
+                  return selectedRunId || undefined;
+                })
+              }
+            >
+              Store, Chunk & Evaluate
+            </button>
+            {selectedContentIngest ? (
+              <section className="selected-knowledge-result">
+                <div className="memory-evaluation-summary">
+                  <Metric label="Stored Chunks" value={String(selectedContentIngest.chunks.length)} />
+                  <Metric label="Embedded" value={String(selectedContentIngest.embeddedChunks)} />
+                  <Metric
+                    label="Dataset Docs"
+                    value={String(selectedContentIngest.datasetQuality?.documentCount ?? 0)}
+                  />
+                  <Metric
+                    label="Dataset Chunks"
+                    value={String(selectedContentIngest.datasetQuality?.chunkCount ?? 0)}
+                  />
+                </div>
+                <p className="muted">
+                  Stored in {selectedContentIngest.dataset.name} using{" "}
+                  {selectedContentIngest.embeddingModel}. Evaluation query:{" "}
+                  {selectedContentIngest.evaluationQuery}
+                </p>
+                {selectedContentIngest.results.length > 0 ? (
+                  <div className="memory-source-list">
+                    {selectedContentIngest.results.map((result, index) => (
+                      <article className="memory-source" key={result.chunk.id}>
+                        <div className="memory-source-header">
+                          <strong>
+                            [{index + 1}] {memorySourceTitle(result)}
+                          </strong>
+                          <span>{memorySourceMatch(result.distance)}</span>
+                        </div>
+                        <p className="memory-source-meta">
+                          {result.dataset.name} | {result.document.sourceType}
+                        </p>
+                        <p>{memorySourceSnippet(result.chunk.content)}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="warning">
+                    Content was stored, but no embedded retrieval matches were returned yet.
+                  </p>
+                )}
               </section>
             ) : null}
 

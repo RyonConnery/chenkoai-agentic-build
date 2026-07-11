@@ -229,6 +229,52 @@ server.post<{ Body: TextIngestRequest }>("/data/ingest/text", async (request, re
   return reply.code(201).send(result);
 });
 
+server.post<{
+  Body: TextIngestRequest & { evaluationQuery?: string };
+}>("/data/ingest/selected", async (request, reply) => {
+  const ingestResult = await dataStore.ingestText({
+    ...request.body,
+    metadata: {
+      ...(request.body.metadata ?? {}),
+      ingestionMode: "selected-content",
+      selectedAt: new Date().toISOString(),
+    },
+  });
+  let embeddedChunks = 0;
+  let embeddingModel = "";
+
+  for (const chunk of ingestResult.chunks) {
+    const embedding = await embeddingProvider.embed(chunk.content);
+    embeddingModel = embedding.model;
+    await dataStore.saveChunkEmbedding(chunk.id, embedding.embedding, embedding.model);
+    embeddedChunks += 1;
+  }
+
+  const query = request.body.evaluationQuery?.trim() || request.body.title;
+  const queryEmbedding = await embeddingProvider.embed(query);
+  const results = await dataStore.searchChunks({
+    embedding: queryEmbedding.embedding,
+    embeddingModel: queryEmbedding.model,
+    datasetId: ingestResult.dataset.id,
+    limit: 5,
+  });
+  const quality = await dataStore.getQualitySummary();
+  const datasetQuality = quality.datasets.find(
+    (dataset) => dataset.id === ingestResult.dataset.id,
+  );
+
+  return reply.code(201).send({
+    ...ingestResult,
+    embeddedChunks,
+    embeddingProvider: embeddingProvider.provider,
+    embeddingModel: embeddingModel || queryEmbedding.model,
+    evaluationQuery: query,
+    results,
+    datasetQuality,
+    quality,
+  });
+});
+
 server.get("/data/datasets", async () => ({
   datasets: await dataStore.listDatasets(),
 }));

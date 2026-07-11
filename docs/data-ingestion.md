@@ -15,6 +15,7 @@ Use `memory` for quick development. Use `postgres` for durable data.
 
 ```text
 POST /data/ingest/text
+POST /data/ingest/selected
 POST /data/embeddings/rebuild
 POST /data/search
 GET  /data/datasets
@@ -46,6 +47,23 @@ The ingestion service:
 - Stores the document with source metadata and a content hash.
 - Splits text into ordered chunks.
 - Stores token estimates for later embedding and cost planning.
+
+## Selected Knowledge Ingestion
+
+Use selected knowledge ingestion when you want ChenkoAI to remember specific content instead of scanning the full workspace:
+
+```json
+{
+  "datasetName": "chenkoai-selected-memory",
+  "title": "Production Data Foundation Notes",
+  "sourceType": "manual",
+  "sourceUri": "planning-session",
+  "text": "Important content ChenkoAI should remember...",
+  "evaluationQuery": "What production data foundation guidance was added?"
+}
+```
+
+`POST /data/ingest/selected` stores the document, chunks the content, embeds the stored chunks immediately, runs a retrieval check using `evaluationQuery`, and returns dataset quality counts plus the top matching chunks. The desktop control center exposes this as `Add Selected Knowledge`.
 
 ## Embeddings
 

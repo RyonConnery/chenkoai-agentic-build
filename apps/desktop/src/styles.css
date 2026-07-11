@@ -176,6 +176,24 @@ textarea {
   resize: vertical;
 }
 
+.selected-knowledge-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+}
+
+.selected-knowledge-text {
+  min-height: 180px;
+}
+
+.selected-knowledge-result {
+  border-top: 1px solid #edf1f7;
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
 .checkbox-row {
   align-items: center;
   display: flex;
@@ -681,7 +699,8 @@ pre {
   }
 
   .dashboard,
-  .metric-grid {
+  .metric-grid,
+  .selected-knowledge-grid {
     grid-template-columns: 1fr;
   }
 
